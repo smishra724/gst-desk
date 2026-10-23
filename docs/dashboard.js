@@ -7,6 +7,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<'
 const FILE = { GSTR1_PDF: 'GSTR-1 PDF', GSTR1_JSON: 'GSTR-1 JSON', GSTR2B_XLSX: '2B Excel', GSTR2B_JSON: '2B JSON', GSTR3B_PDF: '3B PDF' };
 const PILL = { downloaded: 'ok', requested: 'warn', running: 'warn', failed: 'err', skipped: 'idle', pending: 'idle', done: 'ok', active: 'warn', login: 'warn' };
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const cmpV = (a, b) => { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); return 0; };
 const period = (p) => { const [y, m] = p.split('-'); return `${MON[+m - 1]} ${y}`; };
 
 let data = null, extOk = false, search = '';
@@ -56,14 +57,17 @@ function dueDates() {
 /* ---------- render ---------- */
 function render() {
   const chip = $('#ext-chip');
-  chip.className = 'chip ' + (extOk ? 'on' : 'off');
-  $('#ext-text').textContent = extOk ? `Extension connected · v${data.version}` : 'Extension not detected';
+  const outdated = extOk && cmpV(CONFIG.extensionVersion, data.version) > 0;
+  chip.className = 'chip ' + (outdated ? 'upd' : extOk ? 'on' : 'off');
+  $('#ext-text').textContent = outdated ? `Update available · v${CONFIG.extensionVersion}` : extOk ? `Extension connected · v${data.version}` : 'Extension not detected';
+  chip.onclick = outdated ? () => { location.href = 'index.html#download'; } : null;
+  chip.style.cursor = outdated ? 'pointer' : '';
   const app = $('#app');
   const first = (window.__user && (window.__user.displayName || window.__user.email || '').split(/[ @]/)[0]) || '';
 
   const install = `
     <div class="notice"><div><b>GST Desk extension not found in this browser.</b><br>Install it to see your clients, downloads and queue here.</div>
-      <div class="actions"><a class="btn primary" href="${esc(CONFIG.extensionZip)}" download>⬇ Download extension</a><a class="btn" href="index.html#download">How to install</a></div></div>`;
+      <div class="actions">${CONFIG.storeUrl ? `<a class="btn primary" href="${esc(CONFIG.storeUrl)}" target="_blank" rel="noopener">Add to Chrome</a>` : `<a class="btn primary" href="${esc(CONFIG.extensionZip)}" download>⬇ Download extension</a>`}<a class="btn" href="index.html#download">How to install</a></div></div>`;
 
   const dd = dueDates().map(x => `<li><span>${esc(x.what)}</span><span class="when ${x.days <= 3 ? 'soon' : ''}">${x.d.getDate()} ${MON[x.d.getMonth()]} · ${x.days === 0 ? 'today' : x.days === 1 ? 'tomorrow' : `in ${x.days} days`}</span></li>`).join('');
   const dueCard = `<section class="card due"><header><h3>Upcoming due dates</h3><span class="muted small">monthly filers</span></header><div class="body"><ul>${dd}</ul>
@@ -95,7 +99,9 @@ function render() {
         <div class="q-files">${it.jobs.map(j => `<span class="pill ${PILL[j.status] || 'idle'}" title="${esc(j.filename || j.note)}">${esc(FILE[j.file] || j.file)} · ${esc(period(j.period))}</span>`).join('')}</div></div>`).join('')}
     </div></section>` : `<section class="card"><header><h3>Download queue</h3></header><div class="empty"><p>No downloads queued.</p><button class="btn primary" data-open="#downloads">Start downloading returns</button></div></section>`;
 
-  app.innerHTML = `
+  const updNote = cmpV(CONFIG.extensionVersion, data.version) > 0 ? `<div class="notice"><div><b>GST Desk ${esc(CONFIG.extensionVersion)} is available</b> – you have ${esc(data.version)}.<br>Download it, copy the files into your existing GST Desk folder, then click “Reload GST Desk”. Don't remove the extension (that deletes your clients).</div>
+      <div class="actions">${CONFIG.storeUrl ? `<a class="btn primary" href="${esc(CONFIG.storeUrl)}" target="_blank" rel="noopener">Update in Web Store</a>` : `<a class="btn primary" href="${esc(CONFIG.extensionZip)}" download="gst-desk-${esc(CONFIG.extensionVersion)}.zip">⬇ Download update</a>`}<button class="btn" data-open="#clients">Open GST Desk</button></div></div>` : '';
+  app.innerHTML = updNote + `
     <div class="hello"><div><h1>Hello${first ? ', ' + esc(first) : ''}</h1><p>${C.length} client${C.length === 1 ? '' : 's'} in GST Desk on this computer</p></div>
       <div class="actions"><button class="btn" data-open="#clients">+ Add client</button><button class="btn" data-open="#work">Tally &amp; GST work</button><button class="btn primary" data-open="#downloads">Download returns</button></div></div>
 
@@ -157,6 +163,7 @@ function render() {
     { icon: '📦', label: 'Download extension', hint: `Version ${CONFIG.extensionVersion}`, href: CONFIG.extensionZip, download: true },
     { icon: '?', label: 'How to install', href: 'index.html#download' },
     { icon: '⌘', label: 'GitHub', href: CONFIG.repo, external: true },
+    { icon: '🔒', label: 'Privacy policy', href: 'privacy.html' },
     { sep: true },
     { icon: '⎋', label: 'Sign out', onClick: signOut }
   ], { into: document.querySelector('.top .in'), footer: `Signed in as ${esc(user.email || '')}` });

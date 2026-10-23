@@ -1,3 +1,4 @@
+[hidden] { display: none !important; }
 :root {
   --bg: #f6f5f1;
   --panel: #ffffff;
@@ -245,3 +246,9 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 12.5px; }
 .sug-row { display: grid; grid-template-columns: auto 170px 1fr auto; gap: 8px; align-items: center; font-size: 13px; }
 .sug-row input[type=text] { min-height: 30px; padding: 4px 8px; }
 @media (max-width: 700px) { .doc-row { grid-template-columns: 1fr; } .doc-a { justify-content: flex-start; } .sug-row { grid-template-columns: auto 1fr; } }
+
+/* ---------- update banner ---------- */
+.upd { display: flex; gap: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; background: var(--warn-soft); color: var(--ink);
+  border-bottom: 1px solid var(--line); padding: 12px 20px; }
+.upd ol { margin: 6px 0 4px; padding-left: 20px; }
+.upd .row { display: flex; gap: 8px; }

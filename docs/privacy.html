@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GST Desk – Privacy policy</title>
+  <link rel="icon" href="icon.png">
+  <link rel="stylesheet" href="site.css">
+  <style>.policy{max-width:760px;margin:0 auto;padding:32px 20px 60px}.policy h1{font-size:28px;margin-bottom:6px}.policy h2{font-size:18px;margin:26px 0 8px}.policy li{margin:4px 0}</style>
+</head>
+<body>
+<main class="policy">
+  <p><a href="index.html">← GST Desk</a></p>
+  <h1>Privacy policy</h1>
+  <p class="muted">GST Desk Chrome extension and website · last updated 24 October 2026</p>
+
+  <h2>Summary</h2>
+  <p>GST Desk keeps your data on your own computer. The developer does not collect, receive, sell or share any client data, logins, documents or accounting data.</p>
+
+  <h2>What the extension stores, and where</h2>
+  <ul>
+    <li>Client details you enter (names, GSTIN, PAN, addresses, promoters, HSN/SAC codes), documents you upload, download history and settings are saved only in Chrome's local extension storage on your computer.</li>
+    <li>GST portal passwords are encrypted with AES-256 using a key derived from your master password. The master password is never stored; the unlocked key is kept only in memory until Chrome closes.</li>
+    <li>Backups are created only when you click <b>Export</b>, and are saved where you choose.</li>
+  </ul>
+
+  <h2>Where data is sent</h2>
+  <ul>
+    <li><b>GST portal (*.gst.gov.in):</b> only when you use the fill or download features, the extension types your saved details into the portal pages you have open, exactly as you would.</li>
+    <li><b>TallyPrime on your own computer (localhost):</b> the extension reads vouchers and masters from Tally's local port. Nothing leaves your computer.</li>
+    <li><b>GST Desk website (smishra724.github.io):</b> the extension checks the latest version number, and – on the dashboard page only – shows a read-only summary (client names, GSTINs, download status) to you in your own browser. Passwords and documents are never shared with the page.</li>
+  </ul>
+
+  <h2>Website sign-in</h2>
+  <p>The website's sign-in uses Google Firebase Authentication (email and password) when enabled, or a built-in owner login. Firebase stores your email address to let you sign in; see Google's privacy policy. No client data is stored on the website.</p>
+
+  <h2>Permissions used</h2>
+  <ul>
+    <li><b>storage, unlimitedStorage</b> – save clients and documents on your computer.</li>
+    <li><b>downloads</b> – name downloaded returns into client folders.</li>
+    <li><b>Access to *.gst.gov.in</b> – fill forms and download returns when you ask.</li>
+    <li><b>Access to localhost</b> – read data from TallyPrime on your computer.</li>
+    <li><b>Access to smishra724.github.io</b> – update check and dashboard link.</li>
+  </ul>
+
+  <h2>Contact</h2>
+  <p>Questions: open an issue at <a href="https://github.com/smishra724/gst-desk/issues">github.com/smishra724/gst-desk</a>.</p>
+</main>
+</body>
+</html>

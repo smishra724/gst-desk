@@ -22,11 +22,14 @@
     </nav>
     <div class="top-actions">
       <button id="btn-vault" class="ghost vault" title="Portal passwords">🔒 Passwords</button>
+      <button id="btn-update" class="ghost" title="Check for a newer GST Desk">Check for updates</button>
       <button id="btn-import" class="ghost">Import</button>
       <button id="btn-export" class="ghost">Export</button>
       <input type="file" id="file-import" accept="application/json,.json" hidden>
     </div>
   </header>
+
+  <div id="upd-banner" class="upd" hidden></div>
 
   <section id="view-clients" class="view">
     <div class="layout">
@@ -66,6 +69,7 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="schema.js"></script>
+  <script src="updates.js"></script>
   <script src="vault.js"></script>
   <script src="xlsx.js"></script>
   <script src="pdftext.js"></script>

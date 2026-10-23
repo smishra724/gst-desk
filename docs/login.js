@@ -1,11 +1,12 @@
 import { CONFIG } from './config.js';
 import { Auth, friendly, configured, localMode } from './auth.js';
 import { mountMenu } from './nav.js';
+import { renderInstallCard } from './extstatus.js';
 
 const $ = (s) => document.querySelector(s);
 let mode = 'in';
 
-$('#ver').textContent = `Version ${CONFIG.extensionVersion}`;
+renderInstallCard(document.getElementById('download'), { dark: true, onOpen: () => window.postMessage({ gstdesk: 'page', id: 1, action: 'open', hash: '#clients' }, location.origin) });
 mountMenu([
   { icon: '→', label: 'Sign in', href: '#', onClick: () => { document.getElementById('email').focus(); } },
   { icon: '📦', label: 'Download extension', hint: `Version ${CONFIG.extensionVersion}`, href: CONFIG.extensionZip, download: true },
@@ -13,8 +14,6 @@ mountMenu([
   { icon: '🧾', label: 'GST portal', href: 'https://www.gst.gov.in/', external: true },
   { icon: '⌘', label: 'GitHub', href: CONFIG.repo, external: true }
 ], { into: document.querySelector('.hero .logo'), light: true });
-$('#dl-btn').href = CONFIG.extensionZip;
-$('#gh-btn').href = CONFIG.repo;
 
 function say(text, kind = 'err') { $('#msg').innerHTML = text ? `<div class="msg ${kind}">${text}</div>` : ''; }
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));

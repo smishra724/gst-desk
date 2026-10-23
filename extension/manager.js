@@ -699,7 +699,29 @@
     if (area === 'local' && ch[K.profiles] && !saveTimer) { /* changed elsewhere */ }
   });
 
+  /* ---------- update banner ---------- */
+  async function showUpdate(force) {
+    const b = $('#upd-banner');
+    let u;
+    try { u = await GSTUpdates.check(force); } catch (_) { return; }
+    if (!u.update) { b.hidden = true; if (force) toast(u.latest ? `You have the latest version (${u.current})` : 'Could not reach the GST Desk website to check'); return; }
+    b.hidden = false;
+    b.innerHTML = u.storeUrl
+      ? `<div><b>GST Desk ${esc(u.latest)} is available</b> (you have ${esc(u.current)}). ${esc(u.notes)}<br><span class="small">Chrome installs Web Store updates automatically – or update now from the store page.</span></div>
+         <div class="row"><a class="primary-link" href="${esc(u.storeUrl)}" target="_blank" rel="noopener">Open in Chrome Web Store</a></div>`
+      : `<div><b>Update available: GST Desk ${esc(u.latest)}</b> (you have ${esc(u.current)}). ${esc(u.notes)}
+           <ol class="small"><li>Click <b>Download update</b> and unzip it.</li><li>Copy everything from the new <b>gst-desk</b> folder into your existing GST Desk folder, replacing the files.</li><li>Click <b>Reload GST Desk</b>. Your clients and passwords are kept.</li></ol>
+           <span class="small"><b>Don't remove the extension</b> – removing it deletes the clients saved in it.</span></div>
+         <div class="row"><button class="primary" id="upd-dl">Download update</button><button id="upd-reload">Reload GST Desk</button></div>`;
+    const dl = $('#upd-dl');
+    if (dl) dl.onclick = () => chrome.downloads.download({ url: u.zip, filename: `gst-desk-${u.latest}.zip`, saveAs: false });
+    const rl = $('#upd-reload');
+    if (rl) rl.onclick = () => chrome.runtime.reload();
+  }
+  $('#btn-update').addEventListener('click', () => showUpdate(true));
+
   (async function init() {
+    showUpdate(false);
     await store.load();
     renderList();
     renderEditor();
