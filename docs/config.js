@@ -16,6 +16,6 @@ export const CONFIG = {
   ],
   // Name of the extension zip in this folder
   extensionZip: 'gst-desk.zip',
-  extensionVersion: '2.1.0',
+  extensionVersion: '2.2.0',
   repo: 'https://github.com/smishra724/gst-desk'
 };

@@ -230,6 +230,7 @@
         ${fld('business.liabilityDate', 'Date liability to register arises', { span: 4, type: 'date', help: 'Leave blank to use commencement date' })}
         ${fld('business.composition', 'Opt for composition', { span: 2, type: 'seg', options: yesno })}
         ${fld('business.casual', 'Casual taxable person', { span: 2, type: 'seg', options: yesno })}
+        ${fld('business.rule14A', 'Opt for registration under Rule 14A (simplified registration)', { span: 6, type: 'seg', options: yesno, help: 'Only if output tax on supplies to registered persons is up to ₹2.5 lakh a month. Needs Aadhaar authentication of the signatory and a promoter; approval in 3 working days.' })}
         ${C.idLabel ? fld('business.regNo', C.idLabel, { span: 6, upper: true, help: C.idHint || '' }) : ''}
         ${C.idLabel ? fld('business.regDate', p.constitution === 'partnership' ? 'Date of registration' : 'Date of incorporation', { span: 3, type: 'date' }) : ''}
         <div class="sub-h"><span>Jurisdiction (optional — pick on portal if unsure)</span></div>
@@ -279,12 +280,117 @@
         ${fld('notes', 'Your notes', { span: 12, type: 'textarea', placeholder: 'Anything to remember for this client' })}
       </div></div></section>
 
-      <section class="card"><header><h3><span class="step">G</span>Documents to keep ready for upload</h3></header><div class="body">
-        <ul class="docs">${docs}</ul>
-        <p class="muted small" style="margin:10px 0 0">Uploads are always done by you on the portal – the extension never touches file fields.</p>
+      <section class="card" id="docs-card"><header><h3><span class="step">G</span>Documents</h3><span class="hint">Upload once · details are read from PDFs · attached for you on the portal</span></header><div class="body">
+        <div id="doc-list" class="doc-list"><p class="muted">Loading documents…</p></div>
+        <details class="small muted" style="margin-top:10px"><summary>Checklist for this constitution</summary><ul class="docs">${docs}</ul></details>
+        <input type="file" id="doc-file" accept="application/pdf,image/jpeg,image/png" hidden>
       </div></section></details>`;
     refreshValidation();
+    renderDocs();
   }
+
+  /* ---------- documents ---------- */
+  let docUploadSlot = null;
+  const kb = (n) => n >= 1048576 ? (n / 1048576).toFixed(2) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+  async function renderDocs() {
+    const p = current();
+    const box = $('#doc-list');
+    if (!p || !box) return;
+    const have = await GSTDocs.Store.all(p.id);
+    const slots = GSTDocs.slots(p);
+    const row = (s) => {
+      const d = have[s.key];
+      const lim = GSTDocs.LIMIT[s.kind];
+      const over = d && d.size > lim;
+      return `<div class="doc-row" data-slot="${esc(s.key)}">
+        <div class="doc-l"><b>${esc(s.label)}</b>${s.optional ? ' <span class="muted small">(optional)</span>' : ''}
+          <div class="muted small">${s.kind === 'photo' ? 'JPEG, up to 100 KB – resized for you' : 'PDF or JPEG, up to 1 MB'}${s.read ? ' · details read from PDF' : ''}</div></div>
+        <div class="doc-f">${d ? `<span class="badge ${over ? 'err' : 'ok'}">${esc(d.type === 'application/pdf' ? 'PDF' : 'JPEG')} · ${kb(d.size)}</span> <span class="small doc-name" title="${esc(d.name)}">${esc(d.name)}</span>
+          ${s.subtypes ? `<select class="doc-sub" data-doc-sub="${esc(s.key)}" aria-label="Type of proof">${s.subtypes.map(t => `<option${d.subtype === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>` : ''}` : '<span class="muted small">Not uploaded</span>'}</div>
+        <div class="doc-a"><button data-doc-up="${esc(s.key)}">${d ? 'Replace' : 'Upload'}</button>
+          ${d ? `<button data-doc-view="${esc(s.key)}">View</button>${s.read && d.type === 'application/pdf' ? `<button data-doc-read="${esc(s.key)}">Read details</button>` : ''}<button class="danger" data-doc-del="${esc(s.key)}" aria-label="Remove">✕</button>` : ''}</div>
+      </div>`;
+    };
+    const ent = slots.filter(s => s.who === 'entity');
+    const people = p.persons.map(x => ({ x, list: slots.filter(s => s.who === x.id) }));
+    const C = G.CONSTITUTIONS[p.constitution];
+    box.innerHTML = `<div class="doc-h">Business</div>${ent.map(row).join('')}` +
+      people.map(({ x, list }, i) => `<div class="doc-h">${esc(C.person)} ${p.persons.length > 1 ? i + 1 : ''}${G.fullName(x) ? ' · ' + esc(G.fullName(x)) : ''}</div>${list.map(row).join('')}`).join('');
+  }
+
+  async function showSuggestions(p, sugs, title, note) {
+    let dlg = $('#extract-dlg');
+    if (!dlg) { dlg = document.createElement('dialog'); dlg.id = 'extract-dlg'; dlg.className = 'dlg wide'; document.body.appendChild(dlg); }
+    if (!sugs.length) { if (note) toast(note); return; }
+    dlg.innerHTML = `<form method="dialog"><h3>Details found in ${esc(title)}</h3>
+      <p class="muted small">Tick what to fill in. You can correct a value before applying.</p>
+      ${note ? `<p class="small">${esc(note)}</p>` : ''}
+      <div class="sug">${sugs.map((s, i) => `<label class="sug-row"><input type="checkbox" data-i="${i}"${s.checked ? ' checked' : ''}>
+        <span class="sug-l">${esc(s.label)}</span><input type="text" data-v="${i}" value="${esc(s.path.endsWith('dob') || s.path.endsWith('Date') ? s.value : s.value)}">
+        ${s.current ? `<span class="muted small">now: ${esc(s.current)}</span>` : '<span></span>'}</label>`).join('')}</div>
+      <div class="dlg-actions"><button type="button" id="sug-cancel">Skip</button><button type="submit" class="primary" id="sug-ok">Fill selected</button></div></form>`;
+    dlg.querySelector('#sug-cancel').onclick = () => dlg.close();
+    dlg.querySelector('form').onsubmit = (e) => {
+      e.preventDefault();
+      let n = 0;
+      dlg.querySelectorAll('input[type=checkbox]').forEach(cb => {
+        if (!cb.checked) return;
+        const s = sugs[+cb.dataset.i];
+        let v = dlg.querySelector(`[data-v="${cb.dataset.i}"]`).value.trim();
+        if (/(^|\.)pan$|ifsc|regNo/.test(s.path)) v = v.toUpperCase();
+        try { setPath(p, s.path, v); n++; } catch (_) { /* path missing */ }
+      });
+      dlg.close();
+      if (n) { queueSave(); renderEditor(); toast(`Filled ${n} field${n > 1 ? 's' : ''} from the document`); }
+    };
+    dlg.showModal();
+  }
+
+  async function readSlot(p, slot, blob) {
+    try {
+      const r = await GSTDocs.readDetails(blob, slot, p);
+      if (r.suggestions.length) await showSuggestions(p, r.suggestions, slot.label, r.note);
+      else if (r.note) toast(r.note);
+    } catch (e) { toast('Could not read this file: ' + e.message); }
+  }
+
+  document.addEventListener('change', async (ev) => {
+    const p = current();
+    if (!p) return;
+    if (ev.target.id === 'doc-file') {
+      const file = ev.target.files[0];
+      ev.target.value = '';
+      if (!file || !docUploadSlot) return;
+      const slot = GSTDocs.slots(p).find(s => s.key === docUploadSlot);
+      if (!slot) return;
+      try {
+        const prep = await GSTDocs.prepare(file, slot.kind);
+        const dataUrl = await GSTDocs.readAsDataURL(prep.blob);
+        const old = (await GSTDocs.Store.all(p.id))[slot.key];
+        await GSTDocs.Store.put(p.id, slot.key, { name: prep.name, type: prep.type, size: prep.blob.size, dataUrl, added: new Date().toISOString(),
+          subtype: old && old.subtype || (slot.subtypes ? (p.ppob.possession === 'Rented' || p.ppob.possession === 'Leased' ? 'Rent / Lease Agreement' : p.ppob.possession === 'Consent' ? 'Consent Letter' : 'Electricity Bill') : undefined) });
+        renderDocs();
+        if (prep.notes.length) toast(prep.notes.join(' '));
+        if (slot.read) await readSlot(p, slot, prep.blob);
+      } catch (e) { toast(e.message); }
+      return;
+    }
+    if (ev.target.dataset && ev.target.dataset.docSub) {
+      await GSTDocs.Store.patch(p.id, ev.target.dataset.docSub, { subtype: ev.target.value });
+    }
+  });
+  document.addEventListener('click', async (ev) => {
+    const p = current();
+    const b = ev.target.closest('[data-doc-up],[data-doc-view],[data-doc-read],[data-doc-del]');
+    if (!b || !p) return;
+    if (b.dataset.docUp) { docUploadSlot = b.dataset.docUp; $('#doc-file').click(); return; }
+    const key = b.dataset.docView || b.dataset.docRead || b.dataset.docDel;
+    const d = (await GSTDocs.Store.all(p.id))[key];
+    if (!d) return;
+    if (b.dataset.docView) { window.open(URL.createObjectURL(GSTDocs.dataURLtoBlob(d.dataUrl)), '_blank'); return; }
+    if (b.dataset.docRead) { const slot = GSTDocs.slots(p).find(s => s.key === key); await readSlot(p, slot, GSTDocs.dataURLtoBlob(d.dataUrl)); return; }
+    if (b.dataset.docDel && confirm(`Remove “${d.name}”?`)) { await GSTDocs.Store.remove(p.id, key); renderDocs(); }
+  });
 
   function refreshValidation() {
     const p = current();
@@ -428,6 +534,7 @@
     } else if (act === 'delete') {
       if (!confirm(`Delete "${displayName(p)}"? This cannot be undone (export a backup first if unsure).`)) return;
       profiles = profiles.filter(x => x.id !== p.id);
+      GSTDocs.Store.drop(p.id);
       currentId = profiles[0] ? profiles[0].id : null;
       await store.save(); renderList(); renderEditor(); toast('Client deleted');
     }
@@ -484,7 +591,9 @@
   $('#btn-export').addEventListener('click', async () => {
     const r = await chrome.storage.local.get(K.mappings);
     const v = await chrome.storage.local.get(['gstf_vault', K.recipes]);
-    const data = { app: 'gst-desk', version: 2, exported: new Date().toISOString(), profiles, mappings: r[K.mappings] || {}, recipes: v[K.recipes] || {}, vault: v.gstf_vault || null };
+    const docKeys = profiles.map(p => GSTDocs.Store.key(p.id));
+    const dv = await chrome.storage.local.get(docKeys);
+    const data = { app: 'gst-desk', version: 3, exported: new Date().toISOString(), profiles, mappings: r[K.mappings] || {}, recipes: v[K.recipes] || {}, vault: v.gstf_vault || null, documents: dv };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -508,6 +617,7 @@
         alert('This backup was made with a different master password, so its saved portal passwords were not imported. Re-enter them per client.');
       }
       if (data.recipes) await chrome.storage.local.set({ [K.recipes]: data.recipes });
+      if (data.documents) await chrome.storage.local.set(data.documents);
       let added = 0, replaced = 0;
       for (const p of incoming) {
         const i = profiles.findIndex(x => x.id === p.id);
@@ -596,5 +706,6 @@
     vaultButton();
     const v = (location.hash || '').slice(1);
     showView(['downloads', 'work'].includes(v) ? v : 'clients');
+    if (v === 'clients-new') createProfile();
   })();
 })();

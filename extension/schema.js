@@ -106,7 +106,7 @@
       tally: { company: '' },
       partA: { state: '', district: '', legalName: '', pan: '', email: '', mobile: '' },
       business: {
-        tradeName: '', commencementDate: '', liabilityDate: '', reason: 'Voluntary Basis', composition: 'no', casual: 'no',
+        tradeName: '', commencementDate: '', liabilityDate: '', reason: 'Voluntary Basis', composition: 'no', casual: 'no', rule14A: 'no',
         regNo: '', regDate: '', stateWard: '', commissionerate: '', division: '', range: ''
       },
       persons: [],
@@ -211,6 +211,13 @@
     req('business.reason', p.business.reason, 'Reason for registration');
     if (C.idPattern && p.business.regNo && !C.idPattern.test(p.business.regNo)) {
       errs.push({ path: 'business.regNo', level: 'error', msg: `${C.idLabel} format looks wrong (${C.idHint})` });
+    }
+    if (p.business.rule14A === 'yes') {
+      if (p.aadhaarAuth !== 'yes') errs.push({ path: 'aadhaarAuth', level: 'error', msg: 'Rule 14A needs Aadhaar authentication – set it to Yes' });
+      const sig = signatory(p);
+      if (!String(sig.aadhaar || '').trim()) errs.push({ path: 'business.rule14A', level: 'error', msg: 'Rule 14A needs the authorised signatory\'s Aadhaar number' });
+      if (!p.persons.some(x => String(x.aadhaar || '').trim() && (x !== sig || p.persons.length === 1))) errs.push({ path: 'business.rule14A', level: 'error', msg: 'Rule 14A needs the Aadhaar number of at least one promoter / partner' });
+      if (p.business.composition === 'yes') errs.push({ path: 'business.rule14A', level: 'warn', msg: 'Rule 14A with composition – check eligibility' });
     }
     if ((p.constitution === 'llp' || p.constitution.endsWith('company')) && !p.business.regNo) {
       errs.push({ path: 'business.regNo', level: 'warn', msg: `${C.idLabel} is usually needed` });
@@ -335,6 +342,7 @@
     P('fn:commencement', ['business'], /commencement/, { type: 'date', label: 'Date of commencement' }),
     P('fn:liability', ['business'], /liability/, { not: /limited liability/, type: 'date', label: 'Date liability arises' }),
     P('p.business.reason', ['business'], /reason/, { type: 'select', label: 'Reason to obtain registration' }),
+    P('p.business.rule14A', ['business', 'aadhaar', 'verification'], /14\s*-?\s*a\b|simplified registration/, { type: 'yesno', label: 'Opt for registration under Rule 14A' }),
     P('p.business.composition', ['business'], /composition/, { type: 'yesno', label: 'Opt for composition' }),
     P('p.business.casual', ['business'], /casual/, { type: 'yesno', label: 'Casual taxable person' }),
     P('fn:regType', ['business'], /registration type|type of registration|existing registration/, { type: 'select', label: 'Existing registration type' }),

@@ -1,10 +1,18 @@
 import { CONFIG } from './config.js';
 import { Auth, friendly, configured, localMode } from './auth.js';
+import { mountMenu } from './nav.js';
 
 const $ = (s) => document.querySelector(s);
 let mode = 'in';
 
 $('#ver').textContent = `Version ${CONFIG.extensionVersion}`;
+mountMenu([
+  { icon: '→', label: 'Sign in', href: '#', onClick: () => { document.getElementById('email').focus(); } },
+  { icon: '📦', label: 'Download extension', hint: `Version ${CONFIG.extensionVersion}`, href: CONFIG.extensionZip, download: true },
+  { icon: '?', label: 'How to install', href: '#download' },
+  { icon: '🧾', label: 'GST portal', href: 'https://www.gst.gov.in/', external: true },
+  { icon: '⌘', label: 'GitHub', href: CONFIG.repo, external: true }
+], { into: document.querySelector('.hero .logo'), light: true });
 $('#dl-btn').href = CONFIG.extensionZip;
 $('#gh-btn').href = CONFIG.repo;
 

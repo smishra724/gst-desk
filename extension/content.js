@@ -156,7 +156,8 @@
 
   function controls() {
     return Array.from(document.querySelectorAll('input, select, textarea'))
-      .filter(el => !/^(hidden|submit|button|reset|image|search)$/i.test(el.type) && visible(el));
+      .filter(el => !/^(hidden|submit|button|reset|image|search)$/i.test(el.type) &&
+        (visible(el) || (el.type === 'file' && !el.closest('#gstf-host') && el.parentElement && el.parentElement.getClientRects().length > 0)));
   }
 
   function sigsOf(el, lab) {
@@ -310,6 +311,8 @@
     const res = new Map(); // el -> {status, label, note}
     const overwrite = !!settings.overwrite;
     const C = G.CONSTITUTIONS[p.constitution];
+    const docs = window.GSTDocs ? await GSTDocs.Store.all(p.id) : {};
+    const attached = new Set();
 
     for (let pass = 0; pass < 5; pass++) {
       let changed = 0;
@@ -320,8 +323,31 @@
         const prev = res.get(el);
         if (prev && ['ok', 'you', 'pick', 'kept', 'nodata'].includes(prev.status)) continue;
         const lab = labelOf(el), attrs = attrText(el);
+        // Upload fields: attach the client's saved document if there is one
+        if (el.type === 'file') {
+          const key = window.GSTDocs ? GSTDocs.slotForUpload(lab + ' ' + attrs, ctx, p, personIdx) : '';
+          const doc = key && docs[key];
+          if (doc && !attached.has(el)) {
+            try {
+              const dt = new DataTransfer();
+              dt.items.add(GSTDocs.toFile(doc));
+              el.files = dt.files;
+              fire(el, 'input', 'change');
+              attached.add(el);
+              res.set(el, { status: 'ok', label: lab || 'Upload', note: `attached ${doc.name}` });
+              changed++;
+              await sleep(400);
+            } catch (e) { res.set(el, { status: 'you', label: lab || 'Upload', note: 'Upload' }); }
+          } else if (!attached.has(el)) res.set(el, { status: 'you', label: lab || 'Upload', note: key ? 'Upload (no saved document)' : 'Upload' });
+          continue;
+        }
         const why = sensitiveReason(el, lab, attrs);
         if (why) { res.set(el, { status: 'you', label: lab || why, note: why }); continue; }
+        // Type of proof for the principal place of business
+        if (ctx === 'ppob' && el.tagName === 'SELECT' && /type of (document|proof)|document type|proof type|proof of principal/i.test(lab)) {
+          const sub = docs['entity:address'] && docs['entity:address'].subtype;
+          if (sub) { const r = setSelect(el, sub); res.set(el, { status: r === 'noopt' ? 'wait' : r, label: lab, note: r === 'noopt' ? `no option “${sub}”` : '' }); if (r === 'ok') changed++; continue; }
+        }
         if (el.disabled) continue;
 
         let spec = specFor(el, ctx, lab, attrs);
@@ -378,7 +404,7 @@
     let firstYou = null;
     for (const [el, r] of res) {
       if (!el.isConnected) continue;
-      if (r.status === 'ok') { mark(el, 'gstf-ok'); report.ok.push(r.label); }
+      if (r.status === 'ok') { mark(el.type === 'file' && !visible(el) ? el.parentElement : el, 'gstf-ok'); report.ok.push(r.label); if (r.note && /^attached/.test(r.note)) (report.attached = report.attached || []).push(r.note.replace(/^attached /, '')); }
       else if (r.status === 'you') { mark(el, 'gstf-you', `Your turn: ${r.note}`); report.you.push(r.note); if (!firstYou) firstYou = el; }
       else if (r.status === 'pick' || r.status === 'check' || r.status === 'wait') { mark(el, 'gstf-check', r.note); report.check.push(`${r.label}${r.note ? ' – ' + r.note : ''}`); }
       else if (r.status === 'kept') { report.kept.push(r.label); }
@@ -517,6 +543,7 @@
         res = `<div class="res">
           ${r.you.length ? `<div class="you">Your turn: ${esc(Array.from(new Set(r.you)).join(', '))} – highlighted in orange</div>` : ''}
           <div class="line"><span class="dot g"></span><span>${r.ok.length} field${r.ok.length === 1 ? '' : 's'} filled (green)</span></div>
+          ${r.attached && r.attached.length ? `<div class="line"><span class="dot g"></span><span>Attached: ${esc(r.attached.join(', '))}</span></div>` : ''}
           ${r.check.length ? `<details open><summary><span class="dot y" style="display:inline-block"></span> ${r.check.length} to check (dashed)</summary><ul>${r.check.map(x => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
           ${r.kept.length ? `<details><summary>${r.kept.length} left as they were</summary><ul>${r.kept.map(x => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
           ${r.unknown.length ? `<details><summary>${r.unknown.length} empty field${r.unknown.length > 1 ? 's' : ''} not recognised</summary><ul>${r.unknown.map(x => `<li>${esc(x)}</li>`).join('')}</ul><div class="tip">Use <b>Teach a field</b> once and it will fill next time.</div></details>` : ''}

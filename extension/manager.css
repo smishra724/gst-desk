@@ -228,3 +228,20 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 12.5px; }
 .drop.over { border-color: var(--accent); background: var(--accent-soft); }
 .drop b { color: var(--accent); }
 @media (max-width: 900px) { .cols, .cols3 { grid-template-columns: 1fr; } .tabs { order: 3; width: 100%; } }
+
+/* ---------- documents ---------- */
+.doc-list { display: flex; flex-direction: column; }
+.doc-h { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 650; margin: 14px 0 4px; }
+.doc-h:first-child { margin-top: 0; }
+.doc-row { display: grid; grid-template-columns: minmax(200px, 1.3fr) minmax(160px, 1fr) auto; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.doc-l b { font-weight: 600; font-size: 13.5px; }
+.doc-f { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; min-width: 0; }
+.doc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
+.doc-sub { width: auto; min-height: 28px; padding: 3px 6px; font-size: 12.5px; }
+.doc-a { display: flex; gap: 6px; justify-content: flex-end; }
+.doc-a button { padding: 5px 10px; font-size: 12.5px; }
+.dlg.wide { width: min(640px, 94vw); }
+.sug { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow: auto; margin-top: 8px; }
+.sug-row { display: grid; grid-template-columns: auto 170px 1fr auto; gap: 8px; align-items: center; font-size: 13px; }
+.sug-row input[type=text] { min-height: 30px; padding: 4px 8px; }
+@media (max-width: 700px) { .doc-row { grid-template-columns: 1fr; } .doc-a { justify-content: flex-start; } .sug-row { grid-template-columns: auto 1fr; } }

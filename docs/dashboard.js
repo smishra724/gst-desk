@@ -1,5 +1,6 @@
 import { CONFIG } from './config.js';
 import { Auth, friendly } from './auth.js';
+import { mountMenu } from './nav.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -143,7 +144,22 @@ function render() {
   $('#uname').textContent = user.displayName || 'Signed in';
   $('#uemail').textContent = user.email || '';
   $('#avatar').textContent = (name || '?').trim().slice(0, 1).toUpperCase();
-  $('#signout').addEventListener('click', async () => { const a = await Auth.load(); await a.signOut(); location.replace('index.html'); });
+  const signOut = async () => { const a = await Auth.load(); await a.signOut(); location.replace('index.html'); };
+  $('#signout').addEventListener('click', signOut);
+  mountMenu([
+    { icon: '▦', label: 'Dashboard', href: 'dashboard.html', current: true },
+    { icon: '👥', label: 'Clients', hint: 'Client master, documents, logins', onClick: () => openExt('#clients') },
+    { icon: '＋', label: 'Add client', onClick: () => openExt('#clients-new') },
+    { icon: '⬇', label: 'Download returns', hint: 'GSTR-1, 2B, 3B in bulk', onClick: () => openExt('#downloads') },
+    { icon: '⇄', label: 'Tally & GST work', hint: 'GSTR-1 JSON, 3B, reconciliation', onClick: () => openExt('#work') },
+    { icon: '🧾', label: 'GST registration', hint: 'Opens reg.gst.gov.in – fill with the panel', href: 'https://reg.gst.gov.in/registration/', external: true },
+    { sep: true },
+    { icon: '📦', label: 'Download extension', hint: `Version ${CONFIG.extensionVersion}`, href: CONFIG.extensionZip, download: true },
+    { icon: '?', label: 'How to install', href: 'index.html#download' },
+    { icon: '⌘', label: 'GitHub', href: CONFIG.repo, external: true },
+    { sep: true },
+    { icon: '⎋', label: 'Sign out', onClick: signOut }
+  ], { into: document.querySelector('.top .in'), footer: `Signed in as ${esc(user.email || '')}` });
   await refresh();
   setTimeout(() => { if (!extOk) refresh(); }, 1500);
 })();
