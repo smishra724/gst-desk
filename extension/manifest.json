@@ -1,26 +1,55 @@
 {
   "manifest_version": 3,
-  "name": "GST Desk – Registration, Returns & Tally",
-  "version": "2.0.0",
+  "name": "GST Desk \u2013 Registration, Returns & Tally",
+  "version": "2.1.0",
   "description": "Client master with encrypted portal logins, GST registration filling, bulk GSTR-1/2B/3B downloads, Tally import, GSTR-1 JSON, 3B working and reconciliation.",
-  "permissions": ["storage", "downloads"],
+  "permissions": [
+    "storage",
+    "downloads"
+  ],
   "host_permissions": [
     "https://*.gst.gov.in/*",
     "http://localhost/*",
     "http://127.0.0.1/*"
   ],
-  "background": { "service_worker": "background.js" },
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_title": "GST Desk",
-    "default_icon": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "options_page": "manager.html",
-  "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "content_scripts": [
     {
-      "matches": ["https://*.gst.gov.in/*"],
-      "js": ["schema.js", "content.js", "returns.js"],
+      "matches": [
+        "https://*.gst.gov.in/*"
+      ],
+      "js": [
+        "schema.js",
+        "content.js",
+        "returns.js"
+      ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://smishra724.github.io/gst-desk/*"
+      ],
+      "js": [
+        "schema.js",
+        "bridge.js"
+      ],
+      "run_at": "document_start"
     }
   ]
 }

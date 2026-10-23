@@ -10,10 +10,27 @@ A Chrome extension for GST practitioners in India:
 
 All client data stays in your browser. Nothing is sent to any server other than the GST portal and your own Tally.
 
-## Install
+## Website: sign-in + dashboard
 
-1. Download the latest `gst-desk.zip` from **Releases** (or clone this repo) and unzip it.
-2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick the `extension` folder.
+`docs/` is a GitHub Pages site: **https://smishra724.github.io/gst-desk/**
+
+- **Login page** – email/password accounts (Firebase) and the extension download button.
+- **Dashboard** – clients, saved logins, download queue progress, recent files and due dates, read live from the GST Desk extension installed in the same Chrome (read-only; passwords never leave the extension).
+
+### Turn on the website (once)
+1. Repo **Settings → Pages** → Source: *Deploy from a branch* → Branch `main`, folder `/docs` → Save.
+
+### Setting up accounts (once, free)
+1. Go to <https://console.firebase.google.com> → **Add project** (Analytics not needed).
+2. **Build → Authentication → Get started → Sign-in method → Email/Password → Enable**.
+3. **Authentication → Settings → Authorised domains → Add domain**: `smishra724.github.io`.
+4. **Project settings (gear) → Your apps → Web (`</>`)** → register an app → copy `apiKey`, `authDomain`, `projectId`, `appId`.
+5. Paste them into `docs/config.js` and commit. Sign-up and sign-in now work.
+
+## Install the extension
+
+1. Download `gst-desk.zip` from the website's sign-in page (or `docs/gst-desk.zip` here) and unzip it.
+2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick the unzipped `gst-desk` folder (or `extension/` if you cloned the repo).
 3. Chrome → Settings → Downloads → turn off *Ask where to save each file*.
 4. TallyPrime: F1 → Settings → Connectivity → Client/Server: *Both*, Enable ODBC *Yes*, Port *9000*.
 
