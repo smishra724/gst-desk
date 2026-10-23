@@ -1,6 +1,6 @@
 {
-  "version": "2.3.0",
+  "version": "2.4.0",
   "zip": "gst-desk.zip",
-  "notes": "Update check and website install status. Earlier: Rule 14A, client documents with PDF autofill, portal upload.",
+  "notes": "Upload buttons now sit next to their fields; PAN, Aadhaar (incl. locked e-Aadhaar), photos/scans and rent agreements fill the form directly.",
   "storeUrl": ""
 }

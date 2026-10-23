@@ -252,3 +252,24 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 12.5px; }
   border-bottom: 1px solid var(--line); padding: 12px 20px; }
 .upd ol { margin: 6px 0 4px; padding-left: 20px; }
 .upd .row { display: flex; gap: 8px; }
+
+/* ---------- inline documents ---------- */
+.doc-in { min-width: 0; }
+.doc-chip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; border: 1px dashed var(--line-2); border-radius: 9px; padding: 8px 10px; background: var(--bg); }
+.doc-chip.has { border-style: solid; background: var(--ok-soft); border-color: transparent; }
+.doc-upload { border: 0; background: none; color: var(--accent); font-weight: 600; padding: 2px 0; display: inline-flex; gap: 6px; align-items: center; }
+.doc-upload:hover { text-decoration: underline; }
+.doc-ic { font-size: 15px; }
+.doc-t { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.doc-t b { font-size: 13px; }
+.doc-btns { display: flex; gap: 6px; margin-left: auto; }
+.doc-btns button { padding: 4px 9px; font-size: 12px; background: var(--panel); }
+.doc-status { color: var(--accent); flex-basis: 100%; }
+.doc-status:empty { display: none; }
+.doc-trio .trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.doc-check { margin: 0 0 14px; }
+.flash input, .flash select, .flash .seg { animation: flashIn 3.5s ease-out; }
+@keyframes flashIn { 0%, 60% { background: #d9f2df; box-shadow: 0 0 0 3px rgba(26,127,55,.25); } 100% { background: inherit; box-shadow: none; } }
+.toast.act { pointer-events: auto; display: flex; gap: 14px; align-items: center; }
+.toast.act button { background: transparent; border: 1px solid currentColor; color: inherit; padding: 4px 10px; border-radius: 6px; }
+@media (max-width: 900px) { .doc-trio .trio { grid-template-columns: 1fr; } }

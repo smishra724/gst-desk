@@ -144,6 +144,9 @@
     }
     const C = G.CONSTITUTIONS[p.constitution];
     const constOpts = Object.entries(G.CONSTITUTIONS).map(([k, c]) => [k, c.label]);
+    const slotKeys = new Set(GSTDocs.slots(p).map(s => s.key));
+    const dz = (key, cls = 'f s12') => slotKeys.has(key) ? `<div class="doc-in ${cls}" data-doc-slot="${esc(key)}"></div>` : '';
+    const pos = p.ppob.possession;
     const yesno = [['yes', 'Yes'], ['no', 'No']];
 
     const people = p.persons.map((x, i) => {
@@ -174,6 +177,8 @@
           ${fld(`${b}.aadhaar`, 'Aadhaar number', { span: 3, digits: true, maxlength: 12, help: 'Needed for Aadhaar authentication' })}
           ${isCo ? fld(`${b}.din`, p.constitution === 'llp' ? 'DPIN / DIN' : 'DIN', { span: 3, digits: true, maxlength: 8 }) : ''}
           ${fld(`${b}.citizen`, 'Citizen of India', { span: 3, type: 'seg', options: yesno })}
+          <div class="f s12 doc-trio"><span class="lbl">Documents – details are filled in automatically</span><div class="trio">
+            ${dz(`person:${x.id}:pan`, '')}${dz(`person:${x.id}:aadhaar`, '')}${dz(`person:${x.id}:photo`, '')}</div></div>
           <div class="sub-h"><span>Residential address</span><button class="link" data-act="copy-ppob" data-i="${i}">Copy business address</button></div>
           ${addressBlock(`${b}.address`)}
         </div></div>
@@ -217,6 +222,7 @@
       <section class="card"><header><h3><span class="step">A</span>Part A – New registration</h3><span class="hint">OTPs go to this mobile and email</span></header><div class="body"><div class="grid">
         ${fld('partA.legalName', 'Legal name of business (exactly as per PAN)', { span: 8, req: true })}
         ${fld('partA.pan', 'PAN of business', { span: 4, req: true, upper: true, maxlength: 10, help: `4th letter should be ${C.panChar}` })}
+        ${dz('entity:pan')}
         ${fld('partA.state', 'State / UT', { span: 4, type: 'select', options: G.STATES, req: true })}
         ${fld('partA.district', 'District', { span: 4, req: true })}
         ${fld('partA.mobile', 'Mobile of authorised signatory', { span: 4, type: 'tel', req: true, digits: true, maxlength: 10 })}
@@ -233,6 +239,7 @@
         ${fld('business.rule14A', 'Opt for registration under Rule 14A (simplified registration)', { span: 6, type: 'seg', options: yesno, help: 'Only if output tax on supplies to registered persons is up to ₹2.5 lakh a month. Needs Aadhaar authentication of the signatory and a promoter; approval in 3 working days.' })}
         ${C.idLabel ? fld('business.regNo', C.idLabel, { span: 6, upper: true, help: C.idHint || '' }) : ''}
         ${C.idLabel ? fld('business.regDate', p.constitution === 'partnership' ? 'Date of registration' : 'Date of incorporation', { span: 3, type: 'date' }) : ''}
+        ${dz('entity:constitution')}
         <div class="sub-h"><span>Jurisdiction (optional — pick on portal if unsure)</span></div>
         ${fld('business.stateWard', 'State: sector / circle / ward', { span: 6 })}
         ${fld('business.commissionerate', 'Centre: commissionerate', { span: 6 })}
@@ -244,6 +251,7 @@
         <span class="hint">${C.min > 1 ? `At least ${C.min}. ` : ''}Mark one as authorised signatory.</span></header>
         <div class="body">${people}
           ${p.persons.length < C.max ? `<button data-act="add-person">+ Add ${esc(C.person.toLowerCase())}</button>` : ''}
+          ${slotKeys.has('entity:authorisation') ? `<div class="grid" style="margin-top:12px">${dz('entity:authorisation')}</div>` : ''}
         </div></section>
 
       <section class="card"><header><h3><span class="step">D</span>Principal place of business</h3>
@@ -255,6 +263,9 @@
         ${fld('ppob.officeMobile', 'Office mobile', { span: 3, type: 'tel', digits: true, maxlength: 10 })}
         ${fld('ppob.officePhone', 'Office telephone with STD', { span: 3 })}
         ${fld('ppob.possession', 'Nature of possession of premises', { span: 6, type: 'select', options: G.POSSESSION, req: true })}
+        ${dz('entity:address')}
+        ${!pos || pos === 'Rented' || pos === 'Leased' ? dz('entity:rent') : ''}
+        ${!pos || pos === 'Consent' || pos === 'Shared' ? dz('entity:consent') : ''}
         <div class="f s12" data-wrap="ppob.activities"><span class="lbl req">Nature of business activity at this premises</span>
           <div class="checks">${G.ACTIVITIES.map(a => `<label><input type="checkbox" data-multi="ppob.activities" value="${esc(a)}"${p.ppob.activities.includes(a) ? ' checked' : ''}>${esc(a)}</label>`).join('')}</div>
           <span class="msg"></span></div>
@@ -272,6 +283,7 @@
         ${fld('bank.accountNo', 'Account number', { span: 4, digits: true })}
         ${fld('bank.ifsc', 'IFSC', { span: 4, upper: true, maxlength: 11 })}
         ${fld('bank.accountType', 'Account type', { span: 4, type: 'select', options: G.ACCOUNT_TYPES })}
+        ${dz('entity:bank')}
         <div class="sub-h"><span>State specific information</span></div>
         ${fld('stateInfo.ptEC', 'Professional tax EC no.', { span: 3 })}
         ${fld('stateInfo.ptRC', 'Professional tax RC no.', { span: 3 })}
@@ -280,11 +292,9 @@
         ${fld('notes', 'Your notes', { span: 12, type: 'textarea', placeholder: 'Anything to remember for this client' })}
       </div></div></section>
 
-      <section class="card" id="docs-card"><header><h3><span class="step">G</span>Documents</h3><span class="hint">Upload once · details are read from PDFs · attached for you on the portal</span></header><div class="body">
-        <div id="doc-list" class="doc-list"><p class="muted">Loading documents…</p></div>
-        <details class="small muted" style="margin-top:10px"><summary>Checklist for this constitution</summary><ul class="docs">${docs}</ul></details>
-        <input type="file" id="doc-file" accept="application/pdf,image/jpeg,image/png" hidden>
-      </div></section></details>`;
+      <details class="small muted doc-check"><summary>Documents needed for this constitution</summary><ul class="docs">${docs}</ul></details>
+      <input type="file" id="doc-file" accept="application/pdf,image/jpeg,image/png" hidden>
+      </details>`;
     refreshValidation();
     renderDocs();
   }
@@ -294,41 +304,97 @@
   const kb = (n) => n >= 1048576 ? (n / 1048576).toFixed(2) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
   async function renderDocs() {
     const p = current();
-    const box = $('#doc-list');
-    if (!p || !box) return;
+    if (!p) return;
+    const boxes = $$('[data-doc-slot]');
+    if (!boxes.length) return;
     const have = await GSTDocs.Store.all(p.id);
-    const slots = GSTDocs.slots(p);
-    const row = (s) => {
+    const slots = Object.fromEntries(GSTDocs.slots(p).map(s => [s.key, s]));
+    boxes.forEach(box => {
+      const s = slots[box.dataset.docSlot];
+      if (!s) return;
       const d = have[s.key];
       const lim = GSTDocs.LIMIT[s.kind];
-      const over = d && d.size > lim;
-      return `<div class="doc-row" data-slot="${esc(s.key)}">
-        <div class="doc-l"><b>${esc(s.label)}</b>${s.optional ? ' <span class="muted small">(optional)</span>' : ''}
-          <div class="muted small">${s.kind === 'photo' ? 'JPEG, up to 100 KB – resized for you' : 'PDF or JPEG, up to 1 MB'}${s.read ? ' · details read from PDF' : ''}</div></div>
-        <div class="doc-f">${d ? `<span class="badge ${over ? 'err' : 'ok'}">${esc(d.type === 'application/pdf' ? 'PDF' : 'JPEG')} · ${kb(d.size)}</span> <span class="small doc-name" title="${esc(d.name)}">${esc(d.name)}</span>
-          ${s.subtypes ? `<select class="doc-sub" data-doc-sub="${esc(s.key)}" aria-label="Type of proof">${s.subtypes.map(t => `<option${d.subtype === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>` : ''}` : '<span class="muted small">Not uploaded</span>'}</div>
-        <div class="doc-a"><button data-doc-up="${esc(s.key)}">${d ? 'Replace' : 'Upload'}</button>
-          ${d ? `<button data-doc-view="${esc(s.key)}">View</button>${s.read && d.type === 'application/pdf' ? `<button data-doc-read="${esc(s.key)}">Read details</button>` : ''}<button class="danger" data-doc-del="${esc(s.key)}" aria-label="Remove">✕</button>` : ''}</div>
-      </div>`;
-    };
-    const ent = slots.filter(s => s.who === 'entity');
-    const people = p.persons.map(x => ({ x, list: slots.filter(s => s.who === x.id) }));
-    const C = G.CONSTITUTIONS[p.constitution];
-    box.innerHTML = `<div class="doc-h">Business</div>${ent.map(row).join('')}` +
-      people.map(({ x, list }, i) => `<div class="doc-h">${esc(C.person)} ${p.persons.length > 1 ? i + 1 : ''}${G.fullName(x) ? ' · ' + esc(G.fullName(x)) : ''}</div>${list.map(row).join('')}`).join('');
+      const icon = s.kind === 'photo' ? '🖼' : '📄';
+      box.innerHTML = d
+        ? `<div class="doc-chip has"><span class="doc-ic">${icon}</span><span class="doc-t"><b>${esc(s.short || s.label)}</b>
+             <span class="small doc-name" title="${esc(d.name)}">${esc(d.name)} · ${kb(d.size)}</span>${d.size > lim ? ' <span class="badge err">over limit</span>' : ''}</span>
+             ${s.subtypes ? `<select class="doc-sub" data-doc-sub="${esc(s.key)}" aria-label="Type of proof">${s.subtypes.map(t => `<option${d.subtype === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>` : ''}
+             <span class="doc-status small" aria-live="polite"></span>
+             <span class="doc-btns"><button data-doc-view="${esc(s.key)}">View</button>${s.read ? `<button data-doc-read="${esc(s.key)}" title="Fill details from this document again">Fill again</button>` : ''}<button data-doc-up="${esc(s.key)}">Replace</button><button class="danger" data-doc-del="${esc(s.key)}" aria-label="Remove ${esc(s.short || s.label)}">✕</button></span></div>`
+        : `<div class="doc-chip"><button class="doc-upload" data-doc-up="${esc(s.key)}"><span class="doc-ic">⬆</span> Upload ${esc(s.short || s.label)}</button>
+             <span class="small muted">${s.kind === 'photo' ? 'JPEG/PNG – resized to 100 KB' : 'PDF, JPG or photo'}${s.read ? ' · fills the details above' : ''}${s.optional ? ' · optional' : ''}</span>
+             <span class="doc-status small" aria-live="polite"></span></div>`;
+    });
+  }
+  const docStatus = (key, text) => { const el = $(`[data-doc-slot="${CSS.escape(key)}"] .doc-status`); if (el) el.textContent = text || ''; };
+
+  function askPassword(again) {
+    return new Promise((resolve) => {
+      let dlg = $('#pw-dlg');
+      if (!dlg) { dlg = document.createElement('dialog'); dlg.id = 'pw-dlg'; dlg.className = 'dlg'; document.body.appendChild(dlg); }
+      dlg.innerHTML = `<form method="dialog"><h3>This PDF is password-protected</h3>
+        <p class="small muted">For e-Aadhaar the password is the first 4 letters of the name in CAPITALS + year of birth, e.g. <b>ANIT1987</b>.</p>
+        ${again ? '<p class="err-text">That password did not open the file. Try again.</p>' : ''}
+        <label class="f"><span class="lbl">PDF password</span><input type="password" id="pdf-pw" autocomplete="off" required></label>
+        <div class="dlg-actions"><button type="button" id="pdf-pw-x">Skip</button><button type="submit" class="primary">Open</button></div></form>`;
+      dlg.querySelector('#pdf-pw-x').onclick = () => { dlg.close(); resolve(null); };
+      dlg.querySelector('form').onsubmit = (e) => { e.preventDefault(); const v = dlg.querySelector('#pdf-pw').value; dlg.close(); resolve(v || null); };
+      dlg.showModal(); dlg.querySelector('#pdf-pw').focus();
+    });
+  }
+
+  function toastAction(msg, label, fn) {
+    let t = $('#toast-act');
+    if (!t) { t = document.createElement('div'); t.id = 'toast-act'; t.className = 'toast act'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
+    t.innerHTML = `<span>${esc(msg)}</span>${label ? `<button type="button">${esc(label)}</button>` : ''}`;
+    t.classList.add('show');
+    const b = t.querySelector('button');
+    if (b) b.onclick = () => { t.classList.remove('show'); fn(); };
+    clearTimeout(toastAction.t);
+    toastAction.t = setTimeout(() => t.classList.remove('show'), 9000);
+  }
+
+  function flash(paths) {
+    paths.forEach(path => {
+      const el = $(`[data-path="${CSS.escape(path)}"]`);
+      const w = el && (el.closest('.f') || el);
+      if (w) { w.classList.remove('flash'); void w.offsetWidth; w.classList.add('flash'); }
+    });
+    const first = paths.map(pth => $(`[data-path="${CSS.escape(pth)}"]`)).find(Boolean);
+    if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  // Fill empty fields straight away; ask only about fields that already hold something different
+  async function applyFound(p, sugs, label) {
+    const fix = (s) => /(^|\.)pan$|ifsc|regNo/.test(s.path) ? s.value.toUpperCase() : s.value;
+    const empty = sugs.filter(s => !s.current), conflicts = sugs.filter(s => s.current);
+    const before = empty.map(s => [s.path, getPath(p, s.path)]);
+    empty.forEach(s => { try { setPath(p, s.path, fix(s)); } catch (_) { /* path missing */ } });
+    if (empty.length) {
+      if (empty.some(s => s.path === 'ppob.possession')) { /* possession changes which uploads show */ }
+      queueSave(); renderEditor();
+      setTimeout(() => flash(empty.map(s => s.path)), 50);
+      toastAction(`Filled ${empty.length} field${empty.length > 1 ? 's' : ''} from ${label} (highlighted)`, 'Undo', () => {
+        before.forEach(([k, v]) => { try { setPath(p, k, v ?? ''); } catch (_) { /* ignore */ } });
+        queueSave(); renderEditor(); toast('Undone');
+      });
+    }
+    if (conflicts.length) {
+      conflicts.forEach(c => { c.checked = false; });
+      await showSuggestions(p, conflicts, label, 'These fields already have a value. Tick the ones to replace with what the document says.');
+    } else if (!empty.length) toast('Everything in this document is already filled in.');
   }
 
   async function showSuggestions(p, sugs, title, note) {
     let dlg = $('#extract-dlg');
     if (!dlg) { dlg = document.createElement('dialog'); dlg.id = 'extract-dlg'; dlg.className = 'dlg wide'; document.body.appendChild(dlg); }
     if (!sugs.length) { if (note) toast(note); return; }
-    dlg.innerHTML = `<form method="dialog"><h3>Details found in ${esc(title)}</h3>
-      <p class="muted small">Tick what to fill in. You can correct a value before applying.</p>
+    dlg.innerHTML = `<form method="dialog"><h3>${esc(title)}: different details</h3>
       ${note ? `<p class="small">${esc(note)}</p>` : ''}
       <div class="sug">${sugs.map((s, i) => `<label class="sug-row"><input type="checkbox" data-i="${i}"${s.checked ? ' checked' : ''}>
-        <span class="sug-l">${esc(s.label)}</span><input type="text" data-v="${i}" value="${esc(s.path.endsWith('dob') || s.path.endsWith('Date') ? s.value : s.value)}">
+        <span class="sug-l">${esc(s.label)}</span><input type="text" data-v="${i}" value="${esc(s.value)}">
         ${s.current ? `<span class="muted small">now: ${esc(s.current)}</span>` : '<span></span>'}</label>`).join('')}</div>
-      <div class="dlg-actions"><button type="button" id="sug-cancel">Skip</button><button type="submit" class="primary" id="sug-ok">Fill selected</button></div></form>`;
+      <div class="dlg-actions"><button type="button" id="sug-cancel">Keep mine</button><button type="submit" class="primary" id="sug-ok">Replace ticked</button></div></form>`;
     dlg.querySelector('#sug-cancel').onclick = () => dlg.close();
     dlg.querySelector('form').onsubmit = (e) => {
       e.preventDefault();
@@ -341,17 +407,19 @@
         try { setPath(p, s.path, v); n++; } catch (_) { /* path missing */ }
       });
       dlg.close();
-      if (n) { queueSave(); renderEditor(); toast(`Filled ${n} field${n > 1 ? 's' : ''} from the document`); }
+      if (n) { const paths = sugs.filter((_, i) => dlg.querySelector(`[data-i="${i}"]`) && dlg.querySelector(`[data-i="${i}"]`).checked).map(x => x.path); queueSave(); renderEditor(); setTimeout(() => flash(paths), 50); toast(`Replaced ${n} field${n > 1 ? 's' : ''}`); }
     };
     dlg.showModal();
   }
 
   async function readSlot(p, slot, blob) {
+    docStatus(slot.key, 'Reading…');
     try {
-      const r = await GSTDocs.readDetails(blob, slot, p);
-      if (r.suggestions.length) await showSuggestions(p, r.suggestions, slot.label, r.note);
-      else if (r.note) toast(r.note);
-    } catch (e) { toast('Could not read this file: ' + e.message); }
+      const r = await GSTDocs.readDetails(blob, slot, p, { askPassword, onProgress: (n) => docStatus(slot.key, n) });
+      docStatus(slot.key, '');
+      if (r.suggestions.length) await applyFound(p, r.suggestions, slot.short || slot.label);
+      else if (r.note) { docStatus(slot.key, r.note); toast(r.note); }
+    } catch (e) { docStatus(slot.key, ''); toast('Could not read this file: ' + e.message); }
   }
 
   document.addEventListener('change', async (ev) => {

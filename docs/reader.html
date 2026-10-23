@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GST Desk document reader</title>
+<meta name="robots" content="noindex">
+</head>
+<body>
+<!-- Runs inside a hidden frame in the GST Desk extension. Reads text from images, scanned PDFs and
+     password-protected PDFs entirely in this browser (pdf.js + Tesseract.js). Nothing is uploaded. -->
+<script type="module">
+const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/';
+const TESS = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+let pdfjs = null, worker = null;
+
+async function loadPdf() {
+  if (pdfjs) return pdfjs;
+  pdfjs = await import(PDFJS + 'pdf.min.mjs');
+  pdfjs.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.mjs';
+  return pdfjs;
+}
+function loadScript(src) {
+  return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('Could not load ' + src)); document.head.appendChild(s); });
+}
+async function ocr(image) {
+  if (!worker) {
+    if (!window.Tesseract) await loadScript(TESS);
+    worker = await window.Tesseract.createWorker('eng');
+  }
+  const { data } = await worker.recognize(image);
+  return data.text || '';
+}
+async function readPdf(bytes, password, progress) {
+  const lib = await loadPdf();
+  let doc;
+  try { doc = await lib.getDocument({ data: bytes, password: password || undefined }).promise; }
+  catch (e) {
+    if (e && e.name === 'PasswordException') throw Object.assign(new Error(e.code === 2 ? 'wrong-password' : 'password'), { code: e.code === 2 ? 'wrong-password' : 'password' });
+    throw e;
+  }
+  let text = '';
+  const n = Math.min(doc.numPages, 4);
+  for (let i = 1; i <= n; i++) {
+    const page = await doc.getPage(i);
+    const tc = await page.getTextContent();
+    let lastY = null;
+    for (const it of tc.items) {
+      const y = it.transform ? it.transform[5] : null;
+      if (lastY !== null && y !== null && Math.abs(y - lastY) > 2) text += '\n'; else if (text && !text.endsWith(' ')) text += ' ';
+      text += it.str; lastY = y;
+      if (it.hasEOL) text += '\n';
+    }
+    text += '\n';
+  }
+  if (text.replace(/\s/g, '').length > 30) return { text, method: 'pdf-text' };
+  // Scanned PDF: render pages and recognise the text
+  progress('Reading the scanned pages…');
+  let all = '';
+  for (let i = 1; i <= Math.min(doc.numPages, 2); i++) {
+    const page = await doc.getPage(i);
+    const vp = page.getViewport({ scale: 2.2 });
+    const canvas = document.createElement('canvas');
+    canvas.width = vp.width; canvas.height = vp.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    all += await ocr(canvas) + '\n';
+  }
+  return { text: all, method: 'ocr' };
+}
+
+window.addEventListener('message', async (e) => {
+  const d = e.data;
+  if (!d || d.gstdeskReader !== 'read') return;
+  if (!/^chrome-extension:\/\//.test(e.origin) && e.origin !== location.origin) return;
+  const reply = (msg) => e.source.postMessage({ gstdeskReader: 'result', id: d.id, ...msg }, e.origin);
+  const progress = (note) => e.source.postMessage({ gstdeskReader: 'progress', id: d.id, note }, e.origin);
+  try {
+    let r;
+    if (/pdf/.test(d.type)) r = await readPdf(new Uint8Array(d.bytes), d.password, progress);
+    else { progress('Reading text from the image…'); r = { text: await ocr(new Blob([d.bytes], { type: d.type })), method: 'ocr' }; }
+    reply({ ok: true, text: r.text, method: r.method });
+  } catch (err) {
+    reply({ ok: false, error: err.code || err.message || String(err) });
+  }
+});
+parent.postMessage({ gstdeskReader: 'ready' }, '*');
+</script>
+</body>
+</html>
