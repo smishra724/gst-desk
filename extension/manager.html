@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GST Desk</title>
+  <link rel="stylesheet" href="manager.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="icons/icon48.png" alt="" width="28" height="28">
+      <div>
+        <h1>GST Desk</h1>
+        <p>Registration · Returns download · Tally &amp; reconciliation — all data stays in this browser.</p>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-view="clients" aria-selected="true">Clients</button>
+      <button role="tab" data-view="downloads" aria-selected="false">Download returns</button>
+      <button role="tab" data-view="work" aria-selected="false">Tally &amp; GST work</button>
+    </nav>
+    <div class="top-actions">
+      <button id="btn-vault" class="ghost vault" title="Portal passwords">🔒 Passwords</button>
+      <button id="btn-import" class="ghost">Import</button>
+      <button id="btn-export" class="ghost">Export</button>
+      <input type="file" id="file-import" accept="application/json,.json" hidden>
+    </div>
+  </header>
+
+  <section id="view-clients" class="view">
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="side-head">
+          <input id="search" type="search" placeholder="Search clients…" aria-label="Search clients">
+          <button id="btn-new" class="primary">+ New client</button>
+        </div>
+        <ul id="client-list" class="client-list"></ul>
+        <p id="empty-list" class="muted small" hidden>No clients yet. Add your first one.</p>
+      </aside>
+      <main id="editor" class="editor"></main>
+    </div>
+  </section>
+
+  <section id="view-downloads" class="view" hidden>
+    <div class="page" id="downloads"></div>
+  </section>
+
+  <section id="view-work" class="view" hidden>
+    <div class="page" id="work"></div>
+  </section>
+
+  <dialog id="vault-dlg" class="dlg">
+    <form method="dialog" id="vault-form">
+      <h3 id="vault-title">Unlock passwords</h3>
+      <p id="vault-text" class="muted small"></p>
+      <label class="f"><span class="lbl">Master password</span><input type="password" id="vault-pw" autocomplete="new-password" required minlength="6"></label>
+      <label class="f" id="vault-pw2-wrap" hidden><span class="lbl">Type it again</span><input type="password" id="vault-pw2" autocomplete="new-password"></label>
+      <p id="vault-err" class="err-text"></p>
+      <div class="dlg-actions">
+        <button type="button" id="vault-cancel">Cancel</button>
+        <button type="submit" class="primary" id="vault-ok">Unlock</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="schema.js"></script>
+  <script src="vault.js"></script>
+  <script src="xlsx.js"></script>
+  <script src="tally.js"></script>
+  <script src="gstwork.js"></script>
+  <script src="manager.js"></script>
+  <script src="downloads.js"></script>
+  <script src="work.js"></script>
+</body>
+</html>
