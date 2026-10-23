@@ -9,6 +9,11 @@ export const CONFIG = {
     projectId: '',
     appId: ''
   },
+  // Built-in sign-in used until Firebase is set up. Only a salted PBKDF2 hash is stored here.
+  // Ask to change the password and a new hash is generated.
+  localAccounts: [
+    { email: 'smishra724@gmail.com', name: 'Owner', salt: '8df3e42f8f238438fb2a99d031f4967a', hash: 'ffbe05d7273a872b4d508248380a9e80dd73ac2a137fd20e517a4bf01bb912ea', iterations: 200000 }
+  ],
   // Name of the extension zip in this folder
   extensionZip: 'gst-desk.zip',
   extensionVersion: '2.1.0',

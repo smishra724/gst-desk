@@ -1,5 +1,5 @@
 import { CONFIG } from './config.js';
-import { Auth, friendly, configured } from './auth.js';
+import { Auth, friendly, configured, localMode } from './auth.js';
 
 const $ = (s) => document.querySelector(s);
 let mode = 'in';
@@ -56,7 +56,11 @@ $('#form').addEventListener('submit', async (e) => {
 });
 
 (async function init() {
-  if (!configured() && !window.__GSTDESK_TEST_AUTH__) {
+  if (localMode() && !window.__GSTDESK_TEST_AUTH__) {
+    document.querySelector('.tabs').hidden = true;
+    $('#switch-line').hidden = true;
+    $('#forgot-row').hidden = true;
+  } else if (!configured() && !window.__GSTDESK_TEST_AUTH__) {
     say('Accounts are not switched on for this site yet. The owner needs to add the Firebase settings in <code>docs/config.js</code> (see the README). You can still download the extension.', 'info');
     $('#submit').disabled = true;
     return;
