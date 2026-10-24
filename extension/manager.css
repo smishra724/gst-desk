@@ -273,3 +273,23 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 12.5px; }
 .toast.act { pointer-events: auto; display: flex; gap: 14px; align-items: center; }
 .toast.act button { background: transparent; border: 1px solid currentColor; color: inherit; padding: 4px 10px; border-radius: 6px; }
 @media (max-width: 900px) { .doc-trio .trio { grid-template-columns: 1fr; } }
+
+/* ---------- HSN ---------- */
+.hsn-find { display: flex; gap: 8px; margin-bottom: 8px; }
+.hsn-find input { flex: 1; }
+.hsn-find select { width: auto; }
+.hsn-res { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow: auto; margin-bottom: 10px; }
+.hsn-res:empty { display: none; }
+.hsn-hit { text-align: left; border: 1px solid var(--line); background: var(--panel); padding: 6px 10px; border-radius: 7px; font-size: 13px; }
+.hsn-hit:hover { border-color: var(--accent); background: var(--accent-soft); }
+.hsn-rows { display: flex; flex-direction: column; gap: 6px; }
+.hsn-row { display: grid; grid-template-columns: 60px 120px 1fr; gap: 10px; align-items: center; }
+.hsn-row label { font-size: 12.5px; color: var(--ink-2); font-weight: 550; }
+.hsn-row input { min-height: 32px; }
+.hsn-row .msg { grid-column: 2 / 4; }
+.hsn-row .msg:empty { display: none; }
+.hsn-desc { font-size: 13px; }
+.hsn-desc.bad { color: var(--err); }
+.note b { color: var(--ink); }
+.ed-actions .primary { font-weight: 600; }
+@media (max-width: 700px) { .hsn-row { grid-template-columns: 50px 1fr; } .hsn-desc { grid-column: 1 / 3; } }

@@ -1,6 +1,6 @@
 {
-  "version": "2.4.0",
+  "version": "2.5.0",
   "zip": "gst-desk.zip",
-  "notes": "Upload buttons now sit next to their fields; PAN, Aadhaar (incl. locked e-Aadhaar), photos/scans and rent agreements fill the form directly.",
+  "notes": "File registration autopilot (Part A to Verification), district and jurisdiction dropdowns from the GST portal, HSN/SAC descriptions, father\u2019s name from PAN fixed.",
   "storeUrl": ""
 }

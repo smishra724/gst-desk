@@ -297,19 +297,21 @@
   }
 
   /* ---------------- fill ---------------- */
-  async function fillPage() {
-    const p = profile();
-    if (!p) { ui.lastResult = { error: 'Pick a client first.' }; render(); return; }
-    const ctx = currentCtx();
+  // opts (used by the registration autopilot): { clientId, ctx, personIdx, overwrite }
+  async function fillPage(opts = {}) {
+    if (opts.clientId) await load();
+    const p = opts.clientId ? profiles.find(x => x.id === opts.clientId) : profile();
+    if (!p) { ui.lastResult = { error: 'Pick a client first.' }; render(); return ui.lastResult; }
+    const ctx = opts.ctx || currentCtx();
     if (ctx === 'unknown') {
       ui.lastResult = { error: 'Could not tell which registration tab this is. Choose it under "Section" and press Fill again.' };
-      render(); return;
+      render(); return ui.lastResult;
     }
     filling = true;
     ensurePageStyle();
-    const personIdx = personIndexFor(ctx, p);
+    const personIdx = opts.personIdx != null ? opts.personIdx : personIndexFor(ctx, p);
     const res = new Map(); // el -> {status, label, note}
-    const overwrite = !!settings.overwrite;
+    const overwrite = opts.overwrite != null ? opts.overwrite : !!settings.overwrite;
     const C = G.CONSTITUTIONS[p.constitution];
     const docs = window.GSTDocs ? await GSTDocs.Store.all(p.id) : {};
     const attached = new Set();
@@ -327,6 +329,7 @@
         if (el.type === 'file') {
           const key = window.GSTDocs ? GSTDocs.slotForUpload(lab + ' ' + attrs, ctx, p, personIdx) : '';
           const doc = key && docs[key];
+          if (el.files && el.files.length && !attached.has(el)) { res.set(el, { status: 'ok', label: lab || 'Upload', note: '' }); continue; }
           if (doc && !attached.has(el)) {
             try {
               const dt = new DataTransfer();
@@ -422,13 +425,15 @@
     if (ctx === 'promoter' && p.persons.length > 1) {
       report.tip = `Filled ${C.person.toLowerCase()} ${personIdx + 1} of ${p.persons.length}. After you click “Save & Add New” on the portal, choose the next person here and fill again.`;
     }
+    report.missingUploads = Array.from(res.entries()).filter(([el, r]) => el.isConnected && el.type === 'file' && r.status === 'you').map(([, r]) => r.label);
     ui.lastResult = report;
     filling = false;
     render();
-    if (firstYou) {
+    if (firstYou && !opts.quiet) {
       firstYou.scrollIntoView({ behavior: 'smooth', block: 'center' });
       if (firstYou.type !== 'file') setTimeout(() => firstYou.focus({ preventScroll: true }), 400);
     }
+    return report;
   }
 
   function personIndexFor(ctx, p) {
@@ -564,6 +569,7 @@
         </div>
         <div class="btns"><button class="primary" id="fill"${filling ? ' disabled' : ''}>${filling ? 'Filling…' : 'Fill this page'}</button></div>
         <div class="btns"><button id="values" style="flex:1">Values to copy</button><button id="teach" style="flex:1">Teach a field</button></div>
+        ${ctx === 'ppob' ? `<div class="btns"><button id="learnj" style="flex:1" title="Reads every commissionerate, division and range for this state into GST Desk's dropdowns">Learn jurisdiction lists</button></div>${ui.learnMsg ? `<div class="tip">${esc(ui.learnMsg)}</div>` : ''}` : ''}
         ${res}`;
     }
 
@@ -592,6 +598,15 @@
     on('auto', 'change', (e) => { saveSettings({ auto: e.target.checked }); lastAutoCtx = currentCtx(); });
     on('fill', 'click', () => { filling = true; render(); fillPage().catch(err => { filling = false; ui.lastResult = { error: 'Something went wrong: ' + err.message }; render(); }); });
     on('values', 'click', () => { ui.mode = 'values'; render(); });
+    on('learnj', 'click', async () => {
+      if (!window.__gstfLearnJuris) return;
+      try {
+        ui.learnMsg = 'Reading the lists…'; render();
+        const r = await window.__gstfLearnJuris((m) => { ui.learnMsg = m; render(); });
+        ui.learnMsg = `Saved ${r.comms} commissionerates with their divisions and ranges for ${r.state}. They now appear as dropdowns in GST Desk.`;
+      } catch (e) { ui.learnMsg = e.message; }
+      render();
+    });
     on('back', 'click', () => { ui.mode = 'main'; render(); });
     on('teach', 'click', () => { ui.mode = 'teach'; ui.teachEl = null; render(); startTeach(); });
     on('cancel', 'click', () => { stopTeach(); ui.mode = 'main'; ui.teachEl = null; render(); });
@@ -667,6 +682,7 @@
         ui.personIdx = null;
         if (ui.mode !== 'teach') { ui.lastResult = null; render(); }
       }
+      if (window.__gstfAutopilotOn) return;
       if (settings.auto && profile() && ctx !== lastAutoCtx && !['unknown', 'otp', 'verification'].includes(ctx)) {
         lastAutoCtx = ctx;
         filling = true; render();
@@ -692,4 +708,7 @@
 
   // Exposed for the extension's own test page only.
   window.__gstfTest = { detectCtx, labelOf, fillPage, specFor, render, get result() { return ui.lastResult; } };
+  // Used by regrun.js (registration autopilot) on the same page
+  window.__gstfApi = { fill: fillPage, detectCtx, labelOf, controls, visible, setSelect, setText, setCheck, findOption, fire, norm, squash, sleep,
+    hidePanel(h) { host.style.display = h ? 'none' : ''; } };
 })();

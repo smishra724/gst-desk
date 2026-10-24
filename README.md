@@ -4,6 +4,8 @@ A Chrome extension for GST practitioners in India:
 
 - **Client master** – GSTIN, portal login (password encrypted with a master password), Tally company, and full registration details.
 - **GST registration** – fills the new-registration forms on reg.gst.gov.in (including the Rule 14A option) and attaches the client's saved documents; you type every CAPTCHA/OTP and submit yourself.
+- **File registration autopilot** – one click in a client opens the GST portal and types everything in: Part A, then (after your CAPTCHA/OTP) saves the TRN, logs in with it, opens the application and fills every tab – adding each promoter, attaching documents, picking HSN/SAC codes and clicking Save & Continue. It stops at Verification for you to tick the declaration and submit with DSC/EVC.
+- **Dropdowns from the portal** – district lists are read from the portal's New Registration page; ward / commissionerate / division / range lists are read from the Principal Place of Business tab. HSN/SAC codes show their description (portal search, or the portal's HSN directory Excel).
 - **Documents** – upload PAN, Aadhaar, photos, incorporation certificate, address proof etc. once per client. Photos are resized to the portal's 100 KB limit, and details (PAN, names, DOB, CIN, incorporation date, address PIN, IFSC) are read from text PDFs to fill the client form.
 - **Bulk return downloads** – GSTR-1 (PDF/JSON), GSTR-2B (Excel/JSON) and GSTR-3B (PDF) for many clients and months; you type one CAPTCHA per client. Files are saved as `Downloads/GST Desk/<Client>/<FY>/…`.
 - **Tally import** – reads TallyPrime over the ODBC/XML port (9000).

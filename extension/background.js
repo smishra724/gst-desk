@@ -18,6 +18,22 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       await chrome.tabs.create({ url: chrome.runtime.getURL('manager.html' + (msg.hash || '')) });
       return reply({ ok: true });
     }
+    if (msg.type === 'harvest') {
+      const tab = await chrome.tabs.create({ url: 'https://reg.gst.gov.in/registration/', active: false });
+      await chrome.storage.local.set({ gstf_harvest: { tabId: tab.id, what: msg.what, at: Date.now() } });
+      return reply({ ok: true });
+    }
+    if (msg.type === 'harvest-check') {
+      const h = (await chrome.storage.local.get('gstf_harvest')).gstf_harvest;
+      const mine = h && sender.tab && h.tabId === sender.tab.id && Date.now() - h.at < 300000;
+      return reply({ what: mine ? h.what : '' });
+    }
+    if (msg.type === 'harvest-done') {
+      await chrome.storage.local.set({ gstf_harvest_result: { ok: msg.ok, count: msg.count || 0, error: msg.error || '', at: Date.now() } });
+      await chrome.storage.local.remove('gstf_harvest');
+      if (sender.tab && msg.ok) setTimeout(() => chrome.tabs.remove(sender.tab.id).catch(() => {}), 800);
+      return reply({ ok: true });
+    }
     if (msg.type === 'vault-state') return reply({ state: await self.GSTVault.state() });
     if (msg.type === 'get-login') {
       // Only pages on the GST portal may ask for a login.

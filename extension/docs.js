@@ -136,12 +136,24 @@
     return '';
   }
   const lines = (t) => t.split(/\n/).map(x => x.trim()).filter(Boolean);
+  // Label words used on PAN / Aadhaar / certificates (English + Hindi). A line made only of these is a label, not a value.
+  const LABEL_WORDS = /\b(name|father'?s?|fathers|mother'?s?|husband'?s?|date|of|birth|dob|permanent|account|number|card|signature|s\/o|d\/o|w\/o)\b|[\u0900-\u097F]+|[\/:'’`\-–|.]/gi;
+  const isLabelOnly = (line) => !line.replace(LABEL_WORDS, '').replace(/\s+/g, '').length;
+  const looksLikeName = (line) => /^[A-Za-z][A-Za-z .']{2,60}$/.test(line) && !NOISE.test(line) && !isLabelOnly(line);
+  const cleanVal = (v) => v.replace(/[\u0900-\u097F]+/g, ' ').replace(/[^A-Za-z .']/g, ' ').replace(/\s+/g, ' ').trim();
+  // Finds the value written after a label: on the same line ("Father's Name: X") or on the next lines.
   const valueAfter = (ls, labelRx, notRx) => {
     for (let i = 0; i < ls.length; i++) {
-      if (labelRx.test(ls[i]) && !(notRx && notRx.test(ls[i]))) {
-        const same = ls[i].replace(labelRx, '').replace(/^[\s:/\-–]+/, '').replace(/[^\x20-\x7E]+/g, '').trim();
-        if (same && /[A-Za-z]{2}/.test(same) && same.length > 2 && !/^name$/i.test(same)) return same;
-        for (let k = i + 1; k < Math.min(i + 3, ls.length); k++) if (/^[A-Z][A-Z .']{2,}$/.test(ls[k])) return ls[k];
+      const line = ls[i].replace(/[’`]/g, "'");
+      if (!labelRx.test(line) || (notRx && notRx.test(line))) continue;
+      const m = labelRx.exec(line);
+      const after = cleanVal(line.slice(m.index + m[0].length).replace(LABEL_WORDS, ' '));
+      if (after && after.split(' ').some(w => w.length > 1) && looksLikeName(after)) return after.toUpperCase();
+      for (let k = i + 1; k < Math.min(i + 4, ls.length); k++) {
+        const nx = ls[k].replace(/[’`]/g, "'");
+        if (/father|mother|date of birth|dob|signature|permanent account|जन्म|पिता|हस्ताक्षर/i.test(nx)) break; // next label reached
+        const v = cleanVal(nx);
+        if (looksLikeName(v)) return v.toUpperCase();
       }
     }
     return '';
@@ -187,8 +199,8 @@
 
     if (slot.read === 'personPan') {
       add(`${pb}.pan`, 'PAN', pans.find(x => x[3] === 'P') || pans[0]);
-      let nm = valueAfter(L, /^(name|नाम)\b/i, /father|पिता/i);
-      let fn = valueAfter(L, /father'?s?\s*name|पिता/i);
+      let nm = valueAfter(L, /(?:^|[\s\/|])(?:name|नाम)(?=$|[\s:\/|])/i, /father|mother|पिता|माता/i);
+      let fn = valueAfter(L, /father'?s?\s*name|पिता\s*का\s*नाम|पिता/i);
       if (!nm || !fn) { const cand = nameLines(L).map(x => x.toUpperCase()); if (!nm) nm = cand[0] || ''; if (!fn) fn = cand.find(x => x !== nm) || ''; }
       if (nm) { const s = splitName(nm); add(`${pb}.firstName`, 'First name', s.first); add(`${pb}.middleName`, 'Middle name', s.middle); add(`${pb}.lastName`, 'Last name', s.last); }
       if (fn) { const s = splitName(fn); add(`${pb}.fatherFirst`, "Father's first name", s.first); add(`${pb}.fatherMiddle`, "Father's middle name", s.middle); add(`${pb}.fatherLast`, "Father's last name", s.last); }
@@ -352,6 +364,7 @@
     const person = p.persons[personIdx] || p.persons[0];
     if (/photo/.test(t) && (ctx === 'promoter' || ctx === 'signatory' || ctx === 'representative')) return person ? `person:${person.id}:photo` : '';
     if (/authori[sz]ation|resolution|appointment/.test(t)) return 'entity:authorisation';
+    if (ctx === 'signatory' && /proof|authori[sz]ed signatory|letter/.test(t)) return p.constitution === 'proprietorship' ? '' : 'entity:authorisation';
     if (ctx === 'business' && /constitution|deed|incorporation|registration certificate|proof/.test(t)) return 'entity:constitution';
     if (ctx === 'ppob' || /place of business/.test(t)) {
       if (/rent|lease/.test(t)) return 'entity:rent';

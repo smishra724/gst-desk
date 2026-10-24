@@ -117,6 +117,87 @@
     return `<div class="f${span}" data-wrap="${path}"><label for="${id}"${req}>${esc(label)}</label>${control}<span class="msg"></span>${o.help ? `<span class="help">${esc(o.help)}</span>` : ''}</div>`;
   }
 
+  /* ---------- portal lists (districts, jurisdiction) ---------- */
+  let lists = { districts: {}, juris: {} };
+  const loadLists = async () => { lists = await GSTLists.all(); lists.districts = lists.districts || {}; lists.juris = lists.juris || {}; };
+  function selectHtml(path, label, options, o = {}) {
+    const p = current();
+    const v = getPath(p, path) ?? '';
+    const id = 'f_' + path.replace(/\./g, '_');
+    const opts = options.slice();
+    if (v && !opts.includes(v)) opts.unshift(v);
+    return `<div class="f s${o.span || 4}" data-wrap="${path}"><label for="${id}"${o.req ? ' class="req"' : ''}>${esc(label)}</label>
+      <select id="${id}" data-path="${path}"${o.disabled ? ' disabled' : ''}><option value="">${esc(o.empty || 'Select…')}</option>${opts.map(x => `<option${x === v ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select>
+      <span class="msg"></span>${o.help ? `<span class="help">${o.help}</span>` : ''}</div>`;
+  }
+  function districtField(path, state, o = {}) {
+    const list = state ? (lists.districts[state] || []) : [];
+    const help = !state ? 'Choose the state first'
+      : !list.length ? `<button class="link" data-act="load-districts">Load ${esc(state)} districts from the GST portal</button>` : '';
+    return selectHtml(path, 'District', list, { ...o, disabled: !state, empty: !state ? 'Choose the state first' : list.length ? 'Select district…' : 'List not loaded yet', help });
+  }
+  function jurisdictionBlock(p) {
+    const state = p.ppob.address.state || p.partA.state;
+    const j = state && lists.juris[state];
+    const b = p.business;
+    const rec = 'Let the GST portal recommend (from the location)';
+    if (!j) {
+      return `<div class="sub-h"><span>Jurisdiction</span></div>
+        <div class="f s12"><div class="note">${state ? `The GST portal's ward, commissionerate, division and range lists for <b>${esc(state)}</b> load here after GST Desk visits the <b>Principal Place of Business</b> tab on the portal once (it reads them automatically, or press <b>Learn jurisdiction lists</b> in the panel there).` : 'Choose the state of the business address first.'}
+          Until then the portal's own recommendation (from the business location) is kept.</div></div>`;
+    }
+    const comms = Object.keys(j.comm || {});
+    const divs = b.commissionerate && j.comm[b.commissionerate] ? Object.keys(j.comm[b.commissionerate]) : [];
+    const ranges = b.commissionerate && b.division && j.comm[b.commissionerate] ? (j.comm[b.commissionerate][b.division] || []) : [];
+    return `<div class="sub-h"><span>Jurisdiction – lists from the GST portal for ${esc(state)}</span></div>
+      ${selectHtml('business.stateWard', 'State: sector / circle / ward / charge / unit', j.ward || [], { span: 6, empty: rec })}
+      ${selectHtml('business.commissionerate', 'Centre: commissionerate', comms, { span: 6, empty: rec })}
+      ${selectHtml('business.division', 'Centre: division', divs, { span: 6, empty: b.commissionerate ? (divs.length ? 'Select division…' : 'Not loaded – press “Learn jurisdiction lists” on the portal') : 'Choose the commissionerate first', disabled: !b.commissionerate })}
+      ${selectHtml('business.range', 'Centre: range', ranges, { span: 6, empty: b.division ? (ranges.length ? 'Select range…' : 'Not loaded yet') : 'Choose the division first', disabled: !b.division })}`;
+  }
+
+  function hsnRow(path, label, max, ph) {
+    const v = getPath(current(), path) || '';
+    const id = 'f_' + path.replace(/\./g, '_');
+    return `<div class="hsn-row" data-wrap="${path}"><label for="${id}">${esc(label)}</label>
+      <input id="${id}" type="text" data-path="${path}" value="${esc(v)}" inputmode="numeric" data-digits="1" maxlength="${max}" placeholder="${esc(ph)}" autocomplete="off">
+      <span class="hsn-desc muted" data-hsn-desc="${path}">${v ? 'Looking up…' : ''}</span><span class="msg"></span></div>`;
+  }
+  async function showHsnDesc(path) {
+    const el = $(`[data-hsn-desc="${CSS.escape(path)}"]`);
+    if (!el) return;
+    const code = getPath(current(), path) || '';
+    if (!code) { el.textContent = ''; el.className = 'hsn-desc muted'; return; }
+    if (code.length < 2) { el.textContent = ''; return; }
+    el.textContent = 'Looking up…';
+    const d = await GSTHsn.describe(code);
+    if ((getPath(current(), path) || '') !== code) return;
+    if (!d) { el.textContent = ''; return; }
+    el.className = 'hsn-desc' + (d.bad ? ' bad' : d.source === 'chapter' ? ' muted' : '');
+    el.textContent = d.desc + (d.source === 'chapter' && !d.bad ? ' (chapter only – load the HSN list for exact text)' : !d.exact && !d.bad ? ` (heading ${d.code})` : '');
+  }
+  async function hsnSourceNote() {
+    const el = $('#hsn-src');
+    if (!el) return;
+    const info = await GSTHsn.dirInfo();
+    el.innerHTML = info
+      ? `Descriptions from the GST portal's HSN directory (${info.count.toLocaleString('en-IN')} codes, loaded ${new Date(info.date).toLocaleDateString('en-IN')}). <button class="link" data-act="hsn-import">Load a newer file</button>`
+      : `Descriptions come from the GST portal's HSN search when online, otherwise the chapter name. For exact descriptions offline: <a href="${GSTHsn.PORTAL_SEARCH_PAGE}" target="_blank" rel="noopener">open the portal's HSN search</a>, click <b>Download HSN Directory in Excel Format</b>, then <button class="link" data-act="hsn-import">load that file here</button>.`;
+  }
+  let hsnSearchT = null;
+  async function runHsnSearch() {
+    const q = ($('#hsn-q') || {}).value || '';
+    const box = $('#hsn-res');
+    if (!box) return;
+    if (q.trim().length < 2) { box.innerHTML = ''; return; }
+    box.innerHTML = '<p class="small muted">Searching…</p>';
+    const kind = $('#hsn-kind').value;
+    const res = await GSTHsn.search(q, kind);
+    if (($('#hsn-q') || {}).value !== q) return;
+    box.innerHTML = res.length ? res.map(r => `<button type="button" class="hsn-hit" data-hsn-pick="${esc(r.code)}" data-kind="${kind}"><b>${esc(r.code)}</b> ${esc(r.desc)}${r.chapter ? ' <span class="muted">(chapter)</span>' : ''}</button>`).join('')
+      : '<p class="small muted">Nothing found. Try another word, or load the HSN directory below.</p>';
+  }
+
   function addressBlock(base, o = {}) {
     return [
       fld(`${base}.building`, 'Building / Flat no.', { span: 3, req: true }),
@@ -126,7 +207,7 @@
       fld(`${base}.locality`, 'Locality / Sub-locality', { span: 4 }),
       fld(`${base}.city`, 'City / Town / Village', { span: 4, req: true }),
       fld(`${base}.landmark`, 'Nearby landmark', { span: 4 }),
-      fld(`${base}.district`, 'District', { span: 4, req: o.districtReq }),
+      districtField(`${base}.district`, getPath(current(), `${base}.state`) || (base === 'ppob.address' ? current().partA.state : ''), { span: 4, req: o.districtReq }),
       fld(`${base}.state`, 'State', { span: 4, type: 'select', options: G.STATES }),
       fld(`${base}.pin`, 'PIN code', { span: 2, req: true, digits: true, maxlength: 6 })
     ].join('');
@@ -194,6 +275,7 @@
           <div class="sub"><span class="badge">${esc(C.label)}</span><span id="saved" class="saved">Saved</span></div>
         </div>
         <div class="ed-actions">
+          ${p.status === 'new' ? `<button class="primary" data-act="file-reg" title="Opens the GST portal and types all these details into the registration form">▶ ${p.trn ? 'Continue filing (TRN ' + esc(p.trn) + ')' : 'File registration on GST portal'}</button>` : ''}
           <button data-act="duplicate">Duplicate</button>
           <button class="danger" data-act="delete">Delete</button>
         </div>
@@ -224,7 +306,7 @@
         ${fld('partA.pan', 'PAN of business', { span: 4, req: true, upper: true, maxlength: 10, help: `4th letter should be ${C.panChar}` })}
         ${dz('entity:pan')}
         ${fld('partA.state', 'State / UT', { span: 4, type: 'select', options: G.STATES, req: true })}
-        ${fld('partA.district', 'District', { span: 4, req: true })}
+        ${districtField('partA.district', p.partA.state, { span: 4, req: true })}
         ${fld('partA.mobile', 'Mobile of authorised signatory', { span: 4, type: 'tel', req: true, digits: true, maxlength: 10 })}
         ${fld('partA.email', 'Email of authorised signatory', { span: 6, type: 'email', req: true })}
       </div></div></section>
@@ -240,11 +322,7 @@
         ${C.idLabel ? fld('business.regNo', C.idLabel, { span: 6, upper: true, help: C.idHint || '' }) : ''}
         ${C.idLabel ? fld('business.regDate', p.constitution === 'partnership' ? 'Date of registration' : 'Date of incorporation', { span: 3, type: 'date' }) : ''}
         ${dz('entity:constitution')}
-        <div class="sub-h"><span>Jurisdiction (optional — pick on portal if unsure)</span></div>
-        ${fld('business.stateWard', 'State: sector / circle / ward', { span: 6 })}
-        ${fld('business.commissionerate', 'Centre: commissionerate', { span: 6 })}
-        ${fld('business.division', 'Centre: division', { span: 6 })}
-        ${fld('business.range', 'Centre: range', { span: 6 })}
+        ${jurisdictionBlock(p)}
       </div></div></section>
 
       <section class="card"><header><h3><span class="step">C</span>${esc(C.people)}</h3>
@@ -271,10 +349,15 @@
           <span class="msg"></span></div>
       </div></div></section>
 
-      <section class="card"><header><h3><span class="step">E</span>Goods and services</h3><span class="hint">Top 5 each</span></header><div class="body">
-        <div class="codes">${p.goods.hsn.map((_, i) => fld(`goods.hsn.${i}`, `HSN ${i + 1}`, { digits: true, maxlength: 8, placeholder: i ? '' : 'e.g. 8471' })).join('')}</div>
-        <div class="codes" style="margin-top:10px">${p.goods.sac.map((_, i) => fld(`goods.sac.${i}`, `SAC ${i + 1}`, { digits: true, maxlength: 6, placeholder: i ? '' : 'e.g. 998314' })).join('')}</div>
+      <section class="card"><header><h3><span class="step">E</span>Goods and services</h3><span class="hint">Top 5 each · description shown under each code</span></header><div class="body">
+        <div class="hsn-find"><input type="search" id="hsn-q" placeholder="Find a code by product or service name, e.g. laptop, transport, accounting" aria-label="Find HSN or SAC by name">
+          <select id="hsn-kind" aria-label="Goods or services"><option value="goods">Goods (HSN)</option><option value="sac">Services (SAC)</option></select></div>
+        <div id="hsn-res" class="hsn-res"></div>
+        <div class="hsn-rows">${p.goods.hsn.map((_, i) => hsnRow(`goods.hsn.${i}`, `HSN ${i + 1}`, 8, i ? '' : 'e.g. 8471')).join('')}</div>
+        <div class="hsn-rows" style="margin-top:10px">${p.goods.sac.map((_, i) => hsnRow(`goods.sac.${i}`, `SAC ${i + 1}`, 6, i ? '' : 'e.g. 998314')).join('')}</div>
         <div class="f s12" data-wrap="goods"><span class="msg"></span></div>
+        <p class="small muted" id="hsn-src" style="margin:10px 0 0"></p>
+        <input type="file" id="hsn-file" accept=".xlsx" hidden>
       </div></section>
 
       <section class="card"><header><h3><span class="step">F</span>Other details</h3><span class="hint">Optional</span></header><div class="body"><div class="grid">
@@ -297,6 +380,24 @@
       </details>`;
     refreshValidation();
     renderDocs();
+    if (p.status === 'new' || true) {
+      [...p.goods.hsn.map((_, i) => `goods.hsn.${i}`), ...p.goods.sac.map((_, i) => `goods.sac.${i}`)].forEach(showHsnDesc);
+      hsnSourceNote();
+    }
+    autoLoadDistricts(p);
+  }
+  let districtsRequested = false;
+  function autoLoadDistricts(p) {
+    if (!chrome.tabs || districtsRequested || p.status !== 'new' || Object.keys(lists.districts).length) return;
+    try { if (sessionStorage.getItem('gstf_dist_req')) return; sessionStorage.setItem('gstf_dist_req', '1'); } catch (_) { /* ignore */ }
+    requestDistricts(true);
+  }
+  function requestDistricts(auto) {
+    districtsRequested = true;
+    chrome.tabs.create({ url: 'https://reg.gst.gov.in/registration/', active: false }, (tab) => {
+      chrome.storage.local.set({ gstf_harvest: { tabId: tab.id, what: 'districts', at: Date.now() } });
+    });
+    toast(auto ? 'Loading the district lists from the GST portal in a background tab…' : 'Reading district lists from the GST portal… (a background tab opens and closes by itself)');
   }
 
   /* ---------- documents ---------- */
@@ -328,12 +429,13 @@
   }
   const docStatus = (key, text) => { const el = $(`[data-doc-slot="${CSS.escape(key)}"] .doc-status`); if (el) el.textContent = text || ''; };
 
+  let pwHint = '';
   function askPassword(again) {
     return new Promise((resolve) => {
       let dlg = $('#pw-dlg');
       if (!dlg) { dlg = document.createElement('dialog'); dlg.id = 'pw-dlg'; dlg.className = 'dlg'; document.body.appendChild(dlg); }
       dlg.innerHTML = `<form method="dialog"><h3>This PDF is password-protected</h3>
-        <p class="small muted">For e-Aadhaar the password is the first 4 letters of the name in CAPITALS + year of birth, e.g. <b>ANIT1987</b>.</p>
+        <p class="small muted">${pwHint || 'e-Aadhaar: first 4 letters of the name in CAPITALS + year of birth, e.g. <b>ANIT1987</b>. e-PAN: date of birth as DDMMYYYY, e.g. <b>14031985</b>.'}</p>
         ${again ? '<p class="err-text">That password did not open the file. Try again.</p>' : ''}
         <label class="f"><span class="lbl">PDF password</span><input type="password" id="pdf-pw" autocomplete="off" required></label>
         <div class="dlg-actions"><button type="button" id="pdf-pw-x">Skip</button><button type="submit" class="primary">Open</button></div></form>`;
@@ -413,6 +515,8 @@
   }
 
   async function readSlot(p, slot, blob) {
+    pwHint = slot.read === 'aadhaar' ? 'e-Aadhaar password: first 4 letters of the name in CAPITALS + year of birth, e.g. <b>ANIT1987</b>.'
+      : /pan/i.test(slot.read || '') ? 'e-PAN password: date of birth (or incorporation) as DDMMYYYY, e.g. <b>14031985</b>.' : '';
     docStatus(slot.key, 'Reading…');
     try {
       const r = await GSTDocs.readDetails(blob, slot, p, { askPassword, onProgress: (n) => docStatus(slot.key, n) });
@@ -533,6 +637,47 @@
     else if (oldC && G.CONSTITUTIONS[oldC].idType !== C.idType) p.business.regNo = '';
   }
 
+  document.addEventListener('input', (ev) => {
+    if (ev.target.id === 'hsn-q') { clearTimeout(hsnSearchT); hsnSearchT = setTimeout(runHsnSearch, 400); }
+  });
+  document.addEventListener('change', async (ev) => {
+    if (ev.target.id === 'hsn-kind') runHsnSearch();
+    if (ev.target.id === 'hsn-file') {
+      const f = ev.target.files[0]; ev.target.value = '';
+      if (!f) return;
+      toast('Reading the HSN directory…');
+      try { const n = await GSTHsn.importDirectory(f); toast(`Loaded ${n.toLocaleString('en-IN')} HSN/SAC codes`); renderEditor(); }
+      catch (e) { toast(e.message); }
+    }
+  });
+  document.addEventListener('click', (ev) => {
+    const hit = ev.target.closest('[data-hsn-pick]');
+    if (!hit) return;
+    const p = current();
+    const arr = hit.dataset.kind === 'sac' ? p.goods.sac : p.goods.hsn;
+    const code = hit.dataset.hsnPick;
+    if (arr.includes(code)) { toast(`${code} is already added`); return; }
+    const i = arr.findIndex(x => !x);
+    if (i < 0) { toast('All 5 places are used – clear one first'); return; }
+    arr[i] = code;
+    queueSave(); renderEditor();
+    const prefix = hit.dataset.kind === 'sac' ? 'goods.sac.' : 'goods.hsn.';
+    setTimeout(() => flash([prefix + i]), 50);
+  });
+
+  /* ---------- file registration on the portal ---------- */
+  async function startFiling(p) {
+    const errs = G.validate(p).filter(e => e.level === 'error');
+    if (errs.length && !confirm(`${errs.length} required detail${errs.length > 1 ? 's are' : ' is'} still missing (see the list at the top). The portal will stop at those fields and GST Desk will pause there.\n\nStart filing anyway?`)) return;
+    const have = await GSTDocs.Store.all(p.id);
+    const need = GSTDocs.slots(p).filter(s => !s.optional && !have[s.key]);
+    if (need.length && !confirm(`These documents are not uploaded in GST Desk yet:\n• ${need.map(s => s.label).join('\n• ')}\n\nGST Desk will pause on the portal so you can upload them there. Continue?`)) return;
+    const run = { clientId: p.id, name: displayName(p), status: 'running', stage: 'start', person: 0, done: {}, trn: p.trn || '', started: new Date().toISOString() };
+    await chrome.storage.local.set({ gstf_regrun: run });
+    chrome.tabs.create({ url: 'https://reg.gst.gov.in/registration/' });
+    toast('Filing started on the GST portal – type each CAPTCHA and OTP when asked');
+  }
+
   document.addEventListener('click', async (ev) => {
     const open = ev.target.closest('[data-open]');
     if (open) {
@@ -556,6 +701,9 @@
     const act = a.dataset.act;
     if (act === 'new') return createProfile();
     if (!p) return;
+    if (act === 'load-districts') { requestDistricts(false); return; }
+    if (act === 'hsn-import') { $('#hsn-file').click(); return; }
+    if (act === 'file-reg') { startFiling(p); return; }
     if (act === 'save-pw') {
       const val = $('#pw').value;
       if (!val) { toast('Type the password first'); return; }
@@ -636,7 +784,20 @@
       return;
     }
     setPath(p, path, v);
+    if (path === 'business.commissionerate') { p.business.division = ''; p.business.range = ''; }
+    if (path === 'business.division') p.business.range = '';
     queueSave();
+    if (/(^|\.)state$/.test(path) || /^business\.(commissionerate|division)$/.test(path)) {
+      if (/address\.state$|partA\.state$/.test(path)) {
+        const dpath = path.replace(/state$/, 'district');
+        const list = lists.districts[v] || [];
+        if (getPath(p, dpath) && !list.includes(getPath(p, dpath)) && list.length) setPath(p, dpath, '');
+      }
+      renderEditor();
+      const again = $(`[data-path="${CSS.escape(path)}"]`); if (again) again.focus();
+      return;
+    }
+    if (path.startsWith('goods.')) { clearTimeout(onEdit.ht); onEdit.ht = setTimeout(() => showHsnDesc(path), 350); }
     clearTimeout(onEdit.vt);
     onEdit.vt = setTimeout(refreshValidation, el.tagName === 'INPUT' && /text|email|tel/.test(el.type) ? 450 : 0);
     {
@@ -788,8 +949,25 @@
   }
   $('#btn-update').addEventListener('click', () => showUpdate(true));
 
+  chrome.storage.onChanged.addListener(async (ch, area) => {
+    if (area !== 'local') return;
+    if (ch.gstf_lists) { await loadLists(); if (current() && !$('#view-clients').hidden) renderEditor(); }
+    if (ch.gstf_harvest_result && ch.gstf_harvest_result.newValue) {
+      const r = ch.gstf_harvest_result.newValue;
+      toast(r.ok ? `District lists loaded from the GST portal (${r.count} states)` : `Could not read district lists: ${r.error}`);
+    }
+    if (ch[K.profiles] && ch[K.profiles].newValue) {
+      // TRN saved by the portal autopilot
+      const fresh = ch[K.profiles].newValue.map(G.normalizeProfile);
+      let changed = false;
+      for (const f of fresh) { const mine = profiles.find(x => x.id === f.id); if (mine && f.trn && mine.trn !== f.trn) { mine.trn = f.trn; mine.trnDate = f.trnDate; changed = true; } }
+      if (changed) renderEditor();
+    }
+  });
+
   (async function init() {
     showUpdate(false);
+    await loadLists();
     await store.load();
     renderList();
     renderEditor();
