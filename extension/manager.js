@@ -298,7 +298,7 @@
         <div class="f s4" data-wrap="portal.password"><label for="pw">GST password</label>
           <div class="pw-row"><input type="password" id="pw" autocomplete="new-password" placeholder="${p.portal.passwordEnc ? '•••••••• saved' : 'not saved'}">
           <button type="button" data-act="save-pw">Save</button>${p.portal.passwordEnc ? '<button type="button" data-act="show-pw" title="Show saved password">Show</button>' : ''}</div>
-          <span class="msg"></span><span class="help">${p.portal.passwordEnc ? 'Stored encrypted with your master password' : 'Encrypted with your master password before saving'}</span></div>
+          <span class="msg"></span><span class="help">${p.portal.passwordEnc ? 'Saved (encrypted) – fills in automatically on the GST portal' : 'Type it once – saved automatically (encrypted). Or type it on the GST login page; GST Desk saves it after you log in.'}</span></div>
         ${fld('tally.company', 'Company name in Tally', { span: 8, placeholder: 'Exactly as shown in TallyPrime', help: 'Used by “Tally & GST work”' })}
         <div class="f s12 import-row"><button type="button" class="primary" data-act="import-portal">⬇ Import all details from GST portal</button>
           <span class="help">Logs in with this GST ID and password (you type the CAPTCHA), reads the client's registration profile – names, address, partners/directors, business activities, HSN/SAC, jurisdiction – and fills this client master.${p.importedAt ? ` Last imported ${esc(new Date(p.importedAt).toLocaleString())}.` : ''}</span></div>
@@ -537,12 +537,7 @@
   document.addEventListener('change', async (ev) => {
     const p = current();
     if (!p) return;
-    if (ev.target.id === 'pw' && ev.target.value) {
-      if (!(await App.ensureUnlocked())) return;
-      p.portal.passwordEnc = await GSTVault.encrypt(ev.target.value);
-      ev.target.value = ''; ev.target.placeholder = '•••••••• saved'; queueSave(); toast('GST password saved (encrypted)');
-      return;
-    }
+    if (ev.target.id === 'pw' && ev.target.value) { await savePw(p, ev.target, true); return; }
     if (ev.target.id === 'doc-file') {
       const file = ev.target.files[0];
       ev.target.value = '';
@@ -651,7 +646,20 @@
     else if (oldC && G.CONSTITUTIONS[oldC].idType !== C.idType) p.business.regNo = '';
   }
 
+  // The GST password is saved as it is typed (encrypted) – no Save button needed.
+  async function savePw(p, el, final) {
+    const v = el.value;
+    if (!v || !(await App.ensureUnlocked())) return;
+    p.portal.passwordEnc = await GSTVault.encrypt(v);
+    queueSave();
+    el.placeholder = '•••••••• saved';
+    const help = el.closest('.f') && el.closest('.f').querySelector('.help');
+    if (help) help.textContent = 'Saved (encrypted) – fills in automatically on the GST portal';
+    if (final) { el.value = ''; toast('GST password saved'); }
+  }
+  let pwTimer = null;
   document.addEventListener('input', (ev) => {
+    if (ev.target.id === 'pw') { const p = current(); clearTimeout(pwTimer); if (p) pwTimer = setTimeout(() => savePw(p, ev.target, false), 700); return; }
     if (ev.target.id === 'hsn-q') { clearTimeout(hsnSearchT); hsnSearchT = setTimeout(runHsnSearch, 400); }
   });
   document.addEventListener('change', async (ev) => {
@@ -977,19 +985,24 @@
   /* ---------- shared helpers for the other tabs ---------- */
   async function vaultButton() {
     const st = await GSTVault.state();
+    const auto = await GSTVault.isAuto();
     const b = $('#btn-vault');
-    b.textContent = st === 'unlocked' ? '🔓 Passwords unlocked' : st === 'locked' ? '🔒 Unlock passwords' : '🔑 Set master password';
+    b.textContent = st === 'unlocked' ? (auto ? '🔓 Passwords saved' : '🔓 Passwords unlocked') : st === 'locked' ? '🔒 Unlock passwords' : '🔑 Passwords';
+    b.title = auto ? 'GST passwords are saved encrypted on this computer – nothing to type. Click to protect them with a master password instead.' : 'Portal passwords';
     b.classList.toggle('on', st === 'unlocked');
   }
+  // mode: 'unlock' (master password, with "remember" option) or 'protect' (add a master password to passwords saved on this computer)
   function vaultDialog(mode) {
     return new Promise((resolve) => {
       const dlg = $('#vault-dlg');
-      $('#vault-title').textContent = mode === 'create' ? 'Create a master password' : 'Unlock saved passwords';
-      $('#vault-text').textContent = mode === 'create'
-        ? 'Client portal passwords are encrypted with this. You will type it once each time Chrome starts. It cannot be recovered – keep it safe.'
-        : 'Type your master password. Passwords stay unlocked until you close Chrome.';
-      $('#vault-pw2-wrap').hidden = mode !== 'create';
-      $('#vault-ok').textContent = mode === 'create' ? 'Create' : 'Unlock';
+      const protect = mode === 'protect' || mode === 'create';
+      $('#vault-title').textContent = protect ? 'Protect passwords with a master password' : 'Unlock saved passwords';
+      $('#vault-text').textContent = protect
+        ? 'You will type this once each time Chrome starts. It cannot be recovered – keep it safe.'
+        : 'Type your master password. Tick "Remember" so you are not asked again on this computer.';
+      $('#vault-pw2-wrap').hidden = !protect;
+      $('#vault-rem-wrap').hidden = protect;
+      $('#vault-ok').textContent = protect ? 'Protect' : 'Unlock';
       $('#vault-err').textContent = '';
       $('#vault-pw').value = ''; $('#vault-pw2').value = '';
       const done = (ok) => { dlg.close(); $('#vault-form').onsubmit = null; $('#vault-cancel').onclick = null; resolve(ok); };
@@ -998,10 +1011,14 @@
         e.preventDefault();
         const a = $('#vault-pw').value;
         try {
-          if (mode === 'create') {
+          if (protect) {
             if (a !== $('#vault-pw2').value) throw new Error('The two passwords do not match');
-            await GSTVault.create(a);
-          } else await GSTVault.unlock(a);
+            if ((await GSTVault.state()) === 'unlocked') { await GSTVault.change(a, profiles); await store.save(); }
+            else await GSTVault.create(a);
+          } else {
+            await GSTVault.unlock(a);
+            if ($('#vault-rem').checked) await GSTVault.remember();
+          }
           await vaultButton();
           done(true);
         } catch (err) { $('#vault-err').textContent = err.message; }
@@ -1018,7 +1035,8 @@
       const st = await GSTVault.state();
       if (st === 'unlocked') return true;
       if (App._unlocking) return App._unlocking;
-      App._unlocking = vaultDialog(st === 'none' ? 'create' : 'unlock').finally(() => { App._unlocking = null; });
+      // First password ever: save it straight away (encrypted on this computer) – no master password needed.
+      App._unlocking = (st === 'none' ? GSTVault.setupAuto().then(() => { vaultButton(); return true; }) : vaultDialog('unlock')).finally(() => { App._unlocking = null; });
       return App._unlocking;
     },
     async saveProfiles() { await store.save(); renderList(); },
@@ -1026,8 +1044,11 @@
   };
   $('#btn-vault').addEventListener('click', async () => {
     const st = await GSTVault.state();
-    if (st === 'unlocked') { if (confirm('Lock saved passwords now?')) { await GSTVault.lock(); await vaultButton(); toast('Passwords locked'); } }
-    else await vaultDialog(st === 'none' ? 'create' : 'unlock');
+    if (st === 'unlocked' && await GSTVault.isAuto()) {
+      if (confirm('GST passwords are saved (encrypted) on this computer, so they fill in automatically.\n\nProtect them with a master password instead? You will then type it each time Chrome starts.')) { if (await vaultDialog('protect')) toast('Passwords now protected by your master password'); }
+    } else if (st === 'unlocked') { if (confirm('Lock saved passwords now?')) { await GSTVault.lock(); await vaultButton(); toast('Passwords locked'); } }
+    else if (st === 'locked') await vaultDialog('unlock');
+    else { await GSTVault.setupAuto(); await vaultButton(); toast('Passwords will be saved on this computer as you type them'); }
   });
 
   function showView(v) {
@@ -1038,7 +1059,22 @@
   }
   $$('.tabs [role=tab]').forEach(t => t.addEventListener('click', () => showView(t.dataset.view)));
   chrome.storage.onChanged.addListener((ch, area) => {
-    if (area === 'local' && ch[K.profiles] && !saveTimer) { /* changed elsewhere */ }
+    // GST Desk on the portal saved a password / GST ID typed there – take it in without losing anything typed here.
+    if (area === 'local' && ch[K.profiles] && ch[K.profiles].newValue) {
+      let hit = false;
+      for (const np of ch[K.profiles].newValue) {
+        const op = profiles.find(x => x.id === np.id);
+        if (!op || !np.portal) continue;
+        if (JSON.stringify(np.portal.passwordEnc) !== JSON.stringify(op.portal.passwordEnc) || (!op.portal.username && np.portal.username)) {
+          op.portal.passwordEnc = np.portal.passwordEnc;
+          if (!op.portal.username) op.portal.username = np.portal.username;
+          if (op.id === currentId) hit = true;
+        }
+        if (np.trn && !op.trn) op.trn = np.trn;
+      }
+      renderList();
+      if (hit && !(document.activeElement && document.activeElement.closest && document.activeElement.closest('#editor input, #editor select, #editor textarea'))) renderEditor();
+    }
   });
 
   /* ---------- update banner ---------- */
@@ -1084,7 +1120,8 @@
     await store.load();
     renderList();
     renderEditor();
-    vaultButton();
+    await vaultButton();
+    if ((await GSTVault.state()) === 'locked' && profiles.some(p => p.portal && p.portal.passwordEnc)) vaultDialog('unlock');   // ask once, with "remember"
     const v = (location.hash || '').slice(1);
     showView(['downloads', 'work'].includes(v) ? v : 'clients');
     if (v === 'clients-new') createProfile();

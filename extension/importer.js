@@ -329,11 +329,26 @@
     Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v);
     ['input', 'change', 'keyup', 'blur'].forEach(t => el.dispatchEvent(new Event(t, { bubbles: true })));
   };
+
+  // Remember a password typed on the login page (saved for the client once the login works)
+  function watchTyped(user, pass, clientId) {
+    if (pass.__gstfWatch === clientId) return;
+    pass.__gstfWatch = clientId;
+    let t = null;
+    const now = () => { clearTimeout(t); if (pass.value) send({ type: 'login-typed', clientId, username: user ? user.value : '', password: pass.value }); };
+    const later = () => { clearTimeout(t); t = setTimeout(now, 250); };
+    const sendIt = now;
+    [pass, user].forEach(el => el && el.addEventListener('input', later));
+    [pass, user].forEach(el => el && ['change', 'blur'].forEach(ev => el.addEventListener(ev, now)));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendIt(); }, true);
+    document.addEventListener('mousedown', (e) => { const b = e.target.closest && e.target.closest('button, input[type=submit], a'); if (b && /log ?in|sign ?in/i.test(b.textContent || b.value || '')) sendIt(); }, true);
+  }
   async function doLogin(run) {
     const pass = Array.from(document.querySelectorAll('input[type=password]')).find(visible);
     const user = document.querySelector('input#username, input[name=username], input[name=user_name], input[autocomplete=username]') ||
       Array.from(document.querySelectorAll('input[type=text]')).find(i => visible(i) && /user/i.test(i.id + i.name + i.placeholder));
     if (!pass || !user) return false;
+    watchTyped(user, pass, run.clientId);
     if (run.loginFilledAt && Date.now() - run.loginFilledAt < 15000 && pass.value) return true;
     const cred = await send({ type: 'get-login', clientId: run.clientId });
     if (cred.username && user.value !== cred.username) setVal(user, cred.username);
@@ -341,7 +356,7 @@
     await mutate(r => { r.loginFilledAt = Date.now(); r.stage = 'login'; });
     const cap = document.querySelector('input#captcha, input[name=captcha], input[id*=captcha i], input[name*=captcha i], input[placeholder*=character i]');
     const you = cred.error === 'locked' ? `Passwords are locked in GST Desk – type the password for ${run.name}, then the CAPTCHA, then LOGIN.`
-      : !cred.password ? `No GST password saved for ${run.name}. Type it, then the CAPTCHA, then click LOGIN.`
+      : !cred.password ? `No GST password saved for ${run.name}. Type it once (GST Desk saves it for next time), then the CAPTCHA, then click LOGIN.`
       : `GST ID and password filled for ${run.name}. Type the CAPTCHA and click LOGIN.`;
     banner(await load(), { msg: 'Step 1 of 2 · Log in', you, err: '', ok: '' });
     if (cap) { cap.scrollIntoView({ block: 'center' }); cap.focus(); cap.style.outline = '3px solid #d97706'; }
@@ -363,6 +378,7 @@
       if (!run.loginNav || Date.now() - run.loginNav > 15000) { await mutate(r => { r.loginNav = Date.now(); }); location.href = 'https://services.gst.gov.in/services/login'; }
       return;
     }
+    if (run.stage === 'login') send({ type: 'login-ok', clientId: run.clientId });
     // Someone is already logged in when the import starts: keep it only if it is this client, otherwise log out first.
     if (run.stage === 'fresh') {
       if (run.gstin && pageGstins().includes(run.gstin)) await mutate(r => { r.stage = 'profile'; });

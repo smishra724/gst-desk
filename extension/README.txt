@@ -4,7 +4,7 @@ Client master · GST registration filling · Bulk GSTR-1 / 2B / 3B downloads ·
 Tally import (port 9000) · GSTR-1 JSON · GSTR-3B working · Reconciliation
 
 All data (clients, logins, Tally data) stays inside this Chrome profile.
-Portal passwords are encrypted with your master password.
+Portal passwords are stored encrypted in this Chrome profile.
 
 INSTALL / UPGRADE
 1. Unzip to a permanent folder (e.g. Documents\gst-desk).
@@ -16,8 +16,11 @@ INSTALL / UPGRADE
 
 CLIENTS TAB
 - One record per client: GSTIN, portal username, password (encrypted), Tally company name.
-- First time you save a password you create a MASTER PASSWORD. Type it once each time
-  Chrome starts (button "Unlock passwords" at the top). It cannot be recovered.
+- GST passwords save by themselves as you type them (encrypted, on this computer) – no
+  master password needed. A password typed on the GST login page is also saved to the
+  client after the login works, so you type each password only once.
+- Want extra protection? Click "Passwords saved" at the top → protect with a master
+  password (then typed once each time Chrome starts, or tick "Remember").
 - "Import all details from GST portal" (card 2): enter the GST ID and GST password,
   click the button, type the CAPTCHA and LOGIN. GST Desk opens the client's profile,
   reads every tab and fills the client master – legal/trade name, PAN, constitution,

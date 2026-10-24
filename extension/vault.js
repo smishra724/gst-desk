@@ -28,8 +28,14 @@
   }
   async function sessionKey() {
     const r = await chrome.storage.session.get(SESSION_KEY);
-    if (!r[SESSION_KEY]) return null;
-    return crypto.subtle.importKey('raw', unb64(r[SESSION_KEY]), 'AES-GCM', true, ['encrypt', 'decrypt']);
+    let raw = r[SESSION_KEY];
+    if (!raw) {
+      // "Remember on this computer": the key is kept in this Chrome profile, so nothing has to be typed after a restart.
+      const v = (await chrome.storage.local.get(VAULT_KEY))[VAULT_KEY];
+      if (v && v.auto && v.raw) raw = v.raw;
+    }
+    if (!raw) return null;
+    return crypto.subtle.importKey('raw', unb64(raw), 'AES-GCM', true, ['encrypt', 'decrypt']);
   }
   async function keepKey(key) {
     const raw = await crypto.subtle.exportKey('raw', key);
@@ -47,7 +53,7 @@
       const salt = b64(crypto.getRandomValues(new Uint8Array(16)));
       const key = await derive(master, salt);
       const check = await encryptWith(key, CHECK_TEXT);
-      await chrome.storage.local.set({ [VAULT_KEY]: { salt, check, iter: ITER } });
+      await chrome.storage.local.set({ [VAULT_KEY]: { salt, check, iter: ITER } });   // replaces any "remember" key
       await keepKey(key);
     },
     async unlock(master) {
@@ -61,6 +67,21 @@
       await keepKey(key);
     },
     async lock() { await chrome.storage.session.remove(SESSION_KEY); },
+    // Saved on this computer: passwords are encrypted with a key kept in this Chrome profile – no master password to type.
+    async isAuto() { const v = (await chrome.storage.local.get(VAULT_KEY))[VAULT_KEY]; return !!(v && v.auto); },
+    async setupAuto() {
+      const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+      const raw = b64(await crypto.subtle.exportKey('raw', key));
+      await chrome.storage.local.set({ [VAULT_KEY]: { auto: true, raw, check: await encryptWith(key, CHECK_TEXT) } });
+      await keepKey(key);
+    },
+    // Turn an unlocked master-password vault into "remember on this computer" (same key, so saved passwords keep working).
+    async remember() {
+      const r = await chrome.storage.session.get(SESSION_KEY);
+      if (!r[SESSION_KEY]) throw new Error('Passwords are locked');
+      const v = (await chrome.storage.local.get(VAULT_KEY))[VAULT_KEY] || {};
+      await chrome.storage.local.set({ [VAULT_KEY]: { ...v, auto: true, raw: r[SESSION_KEY] } });
+    },
     async encrypt(text) {
       const key = await sessionKey();
       if (!key) throw new Error('Passwords are locked');

@@ -34,7 +34,7 @@
     root.innerHTML = `
       <h2>Download returns</h2>
       <p class="lead">Pick clients, months and files. GST Desk opens the portal, fills each client's username and password, and waits for you to type the CAPTCHA. After you log in it downloads everything for that client, logs out and moves to the next one.</p>
-      ${vs !== 'unlocked' ? `<div class="note warn" style="margin-bottom:12px">Saved passwords are ${vs === 'none' ? 'not set up yet' : 'locked'}. <button class="link" id="dl-unlock">${vs === 'none' ? 'Set a master password' : 'Unlock now'}</button> so logins can be filled automatically.</div>` : ''}
+      ${vs === 'locked' ? `<div class="note warn" style="margin-bottom:12px">Saved passwords are locked. <button class="link" id="dl-unlock">Unlock now</button> (tick “Remember” so it isn’t asked again) so logins fill automatically.</div>` : ''}
       <div class="cols3">
         <section class="card"><header><h3>1 · Clients</h3><span class="hint">${clients.length} with GSTIN</span></header><div class="body">
           ${clients.length ? `<label class="small" style="display:flex;gap:6px;margin-bottom:6px"><input type="checkbox" id="dl-all"${state.sel.size && state.sel.size === clients.length ? ' checked' : ''}> Select all</label>
@@ -120,8 +120,9 @@
     if (old && (old.status === 'running' || old.status === 'paused') && !confirm('A queue is already in progress. Replace it?')) return;
     const chosen = App.profiles.filter(p => state.sel.has(p.id));
     const noPw = chosen.filter(p => !p.portal.passwordEnc);
-    if (noPw.length && !confirm(`${noPw.map(G.displayName).join(', ')} ${noPw.length > 1 ? 'have' : 'has'} no saved password – you'll type it on the login page. Continue?`)) return;
+    if (noPw.length && !confirm(`${noPw.map(G.displayName).join(', ')} ${noPw.length > 1 ? 'have' : 'has'} no saved password yet – type it once on the GST login page and GST Desk saves it for next time. Continue?`)) return;
     if (chosen.some(p => p.portal.passwordEnc) && !(await App.ensureUnlocked())) return;
+    if ((await GSTVault.state()) === 'none') await App.ensureUnlocked();   // so passwords typed on the portal can be saved
     const months = Array.from(state.months).sort((a, b) => a - b);
     const files = FILES.map(f => f[0]).filter(f => state.files.has(f));
     let n = 0;

@@ -230,12 +230,27 @@
   const logoutEl = () => Array.from(document.querySelectorAll('a, button')).find(el => /^\s*log\s*out\s*$/i.test(el.textContent || ''));
   const isLoggedIn = () => !!logoutEl();
 
+
+  // Remember a password typed on the login page (saved for the client once the login works)
+  function watchTyped(user, pass, clientId) {
+    if (pass.__gstfWatch === clientId) return;
+    pass.__gstfWatch = clientId;
+    let t = null;
+    const now = () => { clearTimeout(t); if (pass.value) send({ type: 'login-typed', clientId, username: user ? user.value : '', password: pass.value }); };
+    const later = () => { clearTimeout(t); t = setTimeout(now, 250); };
+    const sendIt = now;
+    [pass, user].forEach(el => el && el.addEventListener('input', later));
+    [pass, user].forEach(el => el && ['change', 'blur'].forEach(ev => el.addEventListener(ev, now)));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendIt(); }, true);
+    document.addEventListener('mousedown', (e) => { const b = e.target.closest && e.target.closest('button, input[type=submit], a'); if (b && /log ?in|sign ?in/i.test(b.textContent || b.value || '')) sendIt(); }, true);
+  }
   async function doLogin(q, it) {
     if (it.loginShownAt && Date.now() - it.loginShownAt < 4000) return;
     const user = document.querySelector('input#username, input[name=username], input[name=user_name], input[autocomplete=username]') ||
       Array.from(document.querySelectorAll('input[type=text]')).find(i => visible(i) && /user/i.test(i.id + i.name + i.placeholder));
     const pass = document.querySelector('input[type=password]');
     if (!user || !pass) return;
+    watchTyped(user, pass, it.clientId);
     const cred = await send({ type: 'get-login', clientId: it.clientId });
     const setVal = (el, v) => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v);
@@ -248,7 +263,7 @@
     it.status = 'login';
     await saveQueue(q);
     if (cred.error === 'locked') banner(q, { you: `Passwords are locked. Unlock them in GST Desk, or type the password for ${it.name} yourself, then the CAPTCHA, then LOGIN.`, err: '' });
-    else if (!cred.password) banner(q, { you: `No saved password for ${it.name}. Type it, then the CAPTCHA, then click LOGIN.`, err: '' });
+    else if (!cred.password) banner(q, { you: `No saved password for ${it.name}. Type it once (GST Desk saves it for next time), then the CAPTCHA, then click LOGIN.`, err: '' });
     else banner(q, { you: `Type the CAPTCHA for ${it.name} and click LOGIN.`, err: '' });
     if (cap) { cap.scrollIntoView({ block: 'center' }); cap.focus(); cap.style.outline = '3px solid #d97706'; }
   }
@@ -291,6 +306,7 @@
       } else banner(q, { msg: 'Waiting for the portal…' });
       return;
     }
+    if (it.status === 'login') send({ type: 'login-ok', clientId: it.clientId });
     if (it.status === 'login' || it.status === 'pending') {
       // Make sure we are logged in as the right client.
       const seen = (document.body.innerText.match(/\b\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]\b/g) || []);

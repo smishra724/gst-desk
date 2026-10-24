@@ -1,6 +1,6 @@
 {
-  "version": "2.7.1",
+  "version": "2.7.2",
   "zip": "gst-desk.zip",
-  "notes": "GST portal import fixed: GSTIN imported, jurisdiction no longer lands in name fields, review box before saving, faster portal pages.",
+  "notes": "GST passwords save automatically (typed once in GST Desk or on the GST login page) and fill in on every download \u2013 no master password to type after a restart.",
   "storeUrl": ""
 }

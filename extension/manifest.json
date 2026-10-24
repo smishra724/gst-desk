@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GST Desk \u2013 Registration, Returns & Tally",
-  "version": "2.7.1",
+  "version": "2.7.2",
   "description": "Client master with encrypted portal logins, GST registration filling, bulk GSTR-1/2B/3B downloads, Tally import, GSTR-1 JSON, 3B working and reconciliation.",
   "permissions": [
     "storage",

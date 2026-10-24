@@ -47,6 +47,35 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       catch (e) { return reply({ username: (p.portal && p.portal.username) || '', error: 'locked' }); }
       return reply({ username: (p.portal && p.portal.username) || '', password });
     }
+    // A password typed on the GST login page is remembered for this client once the login works.
+    if (msg.type === 'login-typed' || msg.type === 'login-ok') {
+      const from = sender && sender.url ? new URL(sender.url).hostname : '';
+      if (!/(^|\.)gst\.gov\.in$/.test(from)) return reply({ error: 'not allowed' });
+      if (msg.type === 'login-typed') {
+        if (!msg.clientId || !msg.password) return reply({});
+        await chrome.storage.session.set({ gstf_typed: { clientId: msg.clientId, username: String(msg.username || '').trim(), password: String(msg.password), at: Date.now() } });
+        return reply({ ok: true });
+      }
+      const t = (await chrome.storage.session.get('gstf_typed')).gstf_typed;
+      if (!t || t.clientId !== msg.clientId || Date.now() - t.at > 15 * 60000) return reply({});
+      await chrome.storage.session.remove('gstf_typed');
+      const r = await chrome.storage.local.get(K.profiles);
+      const list = r[K.profiles] || [];
+      const p = list.find(x => x.id === t.clientId);
+      if (!p) return reply({});
+      p.portal = p.portal || { username: '', passwordEnc: null };
+      if (p.portal.username && t.username && p.portal.username.toLowerCase() !== t.username.toLowerCase()) return reply({ skipped: 'different user' });
+      let changed = false;
+      if (!p.portal.username && t.username) { p.portal.username = t.username; changed = true; }
+      let cur = null;
+      try { cur = await self.GSTVault.decrypt(p.portal.passwordEnc); } catch (_) { cur = null; }
+      if (cur !== t.password) {
+        if ((await self.GSTVault.state()) === 'none') await self.GSTVault.setupAuto();
+        try { p.portal.passwordEnc = await self.GSTVault.encrypt(t.password); changed = true; } catch (_) { return reply({ error: 'locked' }); }
+      }
+      if (changed) { p.updated = new Date().toISOString(); await chrome.storage.local.set({ [K.profiles]: list }); }
+      return reply({ saved: changed });
+    }
     if (msg.type === 'expect-download') {
       await chrome.storage.session.set({ [EXPECT]: { ...msg.info, at: Date.now() } });
       return reply({ ok: true });
