@@ -18,6 +18,14 @@ CLIENTS TAB
 - One record per client: GSTIN, portal username, password (encrypted), Tally company name.
 - First time you save a password you create a MASTER PASSWORD. Type it once each time
   Chrome starts (button "Unlock passwords" at the top). It cannot be recovered.
+- "Import all details from GST portal" (card 2): enter the GST ID and GST password,
+  click the button, type the CAPTCHA and LOGIN. GST Desk opens the client's profile,
+  reads every tab and fills the client master – legal/trade name, PAN, constitution,
+  dates, CIN, jurisdiction, business address, activities, HSN/SAC, partners/directors
+  (with DIN) and the authorised signatory. Empty fields are filled straight away; for
+  fields that already hold something different you tick what to replace. Masked
+  details (email/mobile shown as ****) are not copied. On any other portal page
+  (e.g. Amendment of non-core fields – look only, don't save) click "Read this page too".
 - "Applying for new registration" shows the full registration form (Part A, promoters,
   address, HSN…). The panel on reg.gst.gov.in fills those pages – as in v1.
 

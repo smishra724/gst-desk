@@ -30,6 +30,7 @@
     }
   };
 
+  let openRegFor = null;
   const current = () => profiles.find(p => p.id === currentId) || null;
   const getPath = (obj, path) => path.split('.').reduce((o, k) => (o == null ? o : o[k]), obj);
   const setPath = (obj, path, v) => {
@@ -140,8 +141,8 @@
   }
   function jurisdictionBlock(p) {
     const state = p.ppob.address.state || p.partA.state;
-    const j = state && lists.juris[state];
     const b = p.business;
+    const j = (state && lists.juris[state]) || (b.stateWard || b.commissionerate ? { ward: [], comm: {} } : null);
     const rec = 'Let the GST portal recommend (from the location)';
     if (!j) {
       return `<div class="sub-h"><span>Jurisdiction</span></div>
@@ -291,17 +292,19 @@
         ${fld('status', 'This client is', { span: 6, type: 'seg', options: [['registered', 'Already registered (has GSTIN)'], ['new', 'Applying for new registration']] })}
       </div></div></section>
 
-      <section class="card"><header><h3><span class="step">2</span>GST portal login &amp; Tally</h3><span class="hint">Used for downloading returns and Tally import</span></header><div class="body"><div class="grid">
+      <section class="card"><header><h3><span class="step">2</span>GST ID, password &amp; Tally</h3><span class="hint">Used to import details, download returns and for Tally</span></header><div class="body"><div class="grid">
         ${fld('gstin', 'GSTIN', { span: 4, upper: true, maxlength: 15, req: p.status === 'registered', placeholder: '27AABCS1234K1Z5' })}
-        ${fld('portal.username', 'GST portal username', { span: 4, req: p.status === 'registered' })}
-        <div class="f s4" data-wrap="portal.password"><label for="pw">GST portal password</label>
+        ${fld('portal.username', 'GST ID (portal username)', { span: 4, req: p.status === 'registered', placeholder: 'User ID used on gst.gov.in' })}
+        <div class="f s4" data-wrap="portal.password"><label for="pw">GST password</label>
           <div class="pw-row"><input type="password" id="pw" autocomplete="new-password" placeholder="${p.portal.passwordEnc ? '•••••••• saved' : 'not saved'}">
           <button type="button" data-act="save-pw">Save</button>${p.portal.passwordEnc ? '<button type="button" data-act="show-pw" title="Show saved password">Show</button>' : ''}</div>
           <span class="msg"></span><span class="help">${p.portal.passwordEnc ? 'Stored encrypted with your master password' : 'Encrypted with your master password before saving'}</span></div>
         ${fld('tally.company', 'Company name in Tally', { span: 8, placeholder: 'Exactly as shown in TallyPrime', help: 'Used by “Tally & GST work”' })}
+        <div class="f s12 import-row"><button type="button" class="primary" data-act="import-portal">⬇ Import all details from GST portal</button>
+          <span class="help">Logs in with this GST ID and password (you type the CAPTCHA), reads the client's registration profile – names, address, partners/directors, business activities, HSN/SAC, jurisdiction – and fills this client master.${p.importedAt ? ` Last imported ${esc(new Date(p.importedAt).toLocaleString())}.` : ''}</span></div>
       </div></div></section>
 
-      <details class="reg-wrap" ${p.status === 'new' ? 'open' : ''}><summary>Registration details${p.status === 'new' ? '' : ' (only needed for a new GST registration)'}</summary>
+      <details class="reg-wrap" ${p.status === 'new' || openRegFor === p.id ? 'open' : ''}><summary>Registration details${p.status === 'new' ? '' : p.importedAt ? ' – imported from the GST portal' : ' (only needed for a new GST registration, or import them from the GST portal)'}</summary>
 
       <section class="card"><header><h3><span class="step">A</span>Part A – New registration</h3><span class="hint">OTPs go to this mobile and email</span></header><div class="body"><div class="grid">
         ${fld('partA.legalName', 'Legal name of business (exactly as per PAN)', { span: 8, req: true })}
@@ -534,6 +537,12 @@
   document.addEventListener('change', async (ev) => {
     const p = current();
     if (!p) return;
+    if (ev.target.id === 'pw' && ev.target.value) {
+      if (!(await App.ensureUnlocked())) return;
+      p.portal.passwordEnc = await GSTVault.encrypt(ev.target.value);
+      ev.target.value = ''; ev.target.placeholder = '•••••••• saved'; queueSave(); toast('GST password saved (encrypted)');
+      return;
+    }
     if (ev.target.id === 'doc-file') {
       const file = ev.target.files[0];
       ev.target.value = '';
@@ -670,6 +679,58 @@
     setTimeout(() => flash([prefix + i]), 50);
   });
 
+  /* ---------- import a registered client's details from the GST portal ---------- */
+  async function startImport(p) {
+    const typed = $('#pw') && $('#pw').value;
+    if (typed) { if (!(await App.ensureUnlocked())) return; p.portal.passwordEnc = await GSTVault.encrypt(typed); $('#pw').value = ''; queueSave(); }
+    if (!p.portal.username) { toast('Enter the GST ID (portal username) first'); const i = $('[data-path="portal.username"]'); if (i) i.focus(); return; }
+    if (p.portal.passwordEnc && !(await App.ensureUnlocked())) return;
+    clearTimeout(saveTimer); await store.save();
+    await chrome.storage.local.set({ gstf_import: { clientId: p.id, name: displayName(p), gstin: p.gstin || '', status: 'running', stage: 'login', started: new Date().toISOString() } });
+    chrome.tabs.create({ url: 'https://services.gst.gov.in/services/login' });
+    toast(p.portal.passwordEnc ? 'GST portal opened – type the CAPTCHA and click LOGIN' : 'GST portal opened – type the password and CAPTCHA, then LOGIN');
+  }
+
+  function mergePersons(p, list) {
+    const key = (x) => [x.firstName, x.lastName].join(' ').trim().toUpperCase();
+    const touched = [];
+    for (const x of list) {
+      let t = p.persons.find(y => key(y) && key(y) === key(x)) || p.persons.find(y => !y.firstName && !y.lastName && !touched.includes(y));
+      if (!t) { t = G.newPerson(); t.designation = G.CONSTITUTIONS[p.constitution].designations[0]; p.persons.push(t); }
+      for (const [k, v] of Object.entries(x)) {
+        if (k === 'isSignatory' || k === 'address') continue;
+        if (v && !t[k]) t[k] = k === 'designation' ? (G.CONSTITUTIONS[p.constitution].designations.find(d => d.toLowerCase() === String(v).toLowerCase()) || v) : v;
+      }
+      if (x.address) for (const [k, v] of Object.entries(x.address)) if (v && !t.address[k]) t.address[k] = v;
+      touched.push(t);
+    }
+    const sign = list.findIndex(x => x.isSignatory);
+    if (sign >= 0 && touched[sign]) p.persons.forEach(y => { y.isSignatory = y === touched[sign]; });
+    return touched.length;
+  }
+
+  async function applyImport(res) {
+    if (!res || !res.clientId || !res.data) return;
+    const p = profiles.find(x => x.id === res.clientId);
+    if (!p || p.importedAt === res.at) return;
+    if (currentId !== p.id) { currentId = p.id; renderList(); }
+    p.importedAt = res.at;
+    p.status = 'registered';
+    openRegFor = p.id;
+    const m = GSTImport.mapImport(res.data, p);
+    const nPeople = m.persons.length ? mergePersons(p, m.persons) : 0;
+    const acts = m.suggestions.find(s => s.path === 'ppob.activities');
+    if (acts) { p.ppob.activities = Array.from(new Set([...(p.ppob.activities || []), ...acts.list])); }
+    const rest = m.suggestions.filter(s => s !== acts);
+    queueSave(); renderEditor();
+    if (rest.length) await applyFound(p, rest, 'the GST portal');
+    const total = rest.length + (acts ? 1 : 0);
+    toast(total || nPeople ? `Imported from GST portal: ${total} field${total === 1 ? '' : 's'}${nPeople ? `, ${nPeople} partner/director/proprietor record${nPeople > 1 ? 's' : ''}` : ''}` : 'The portal page had nothing new for this client');
+  }
+  chrome.storage.onChanged.addListener((ch, area) => {
+    if (area === 'local' && ch.gstf_import_result && ch.gstf_import_result.newValue) applyImport(ch.gstf_import_result.newValue);
+  });
+
   /* ---------- file registration on the portal ---------- */
   async function startFiling(p) {
     const errs = G.validate(p).filter(e => e.level === 'error');
@@ -709,9 +770,10 @@
     if (act === 'load-districts') { requestDistricts(false); return; }
     if (act === 'hsn-import') { $('#hsn-file').click(); return; }
     if (act === 'file-reg') { startFiling(p); return; }
+    if (act === 'import-portal') { startImport(p); return; }
     if (act === 'save-pw') {
       const val = $('#pw').value;
-      if (!val) { toast('Type the password first'); return; }
+      if (!val) { if (!p.portal.passwordEnc) toast('Type the password first'); return; }
       if (!(await App.ensureUnlocked())) return;
       p.portal.passwordEnc = await GSTVault.encrypt(val);
       queueSave(); renderEditor(); toast('Password saved (encrypted)');
@@ -915,9 +977,12 @@
     get profiles() { return profiles; },
     toast, esc,
     async ensureUnlocked() {
+      if (App._unlocking) return App._unlocking;
       const st = await GSTVault.state();
       if (st === 'unlocked') return true;
-      return vaultDialog(st === 'none' ? 'create' : 'unlock');
+      if (App._unlocking) return App._unlocking;
+      App._unlocking = vaultDialog(st === 'none' ? 'create' : 'unlock').finally(() => { App._unlocking = null; });
+      return App._unlocking;
     },
     async saveProfiles() { await store.save(); renderList(); },
     openClient(id) { currentId = id; showView('clients'); renderList(); renderEditor(); }

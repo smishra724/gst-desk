@@ -16,7 +16,7 @@ export const CONFIG = {
   ],
   // Name of the extension zip in this folder
   extensionZip: 'gst-desk.zip',
-  extensionVersion: '2.6.0',
+  extensionVersion: '2.7.0',
   // After publishing on the Chrome Web Store, paste the listing link here – the site then shows a one-click “Add to Chrome”.
   storeUrl: '',
   repo: 'https://github.com/smishra724/gst-desk'

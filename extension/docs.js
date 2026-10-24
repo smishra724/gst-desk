@@ -504,5 +504,6 @@
     return '';
   }
 
-  root.GSTDocs = { ADDRESS_TYPES, LIMIT, slots, Store, prepare, readAsDataURL, dataURLtoBlob, toFile, readDetails, suggest, slotForUpload, findDate, fixPans, mergeSuggestions };
+  root.GSTDocs = { ADDRESS_TYPES, LIMIT, slots, Store, prepare, readAsDataURL, dataURLtoBlob, toFile, readDetails, suggest, slotForUpload, findDate, fixPans, mergeSuggestions,
+    parseAddress: (t) => aadhaarAddress('Address: ' + String(t || '').replace(/\n/g, ' ')), splitName, capsName };
 })(typeof window !== 'undefined' ? window : globalThis);
