@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GST Desk \u2013 Registration, Returns & Tally",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "description": "Client master with encrypted portal logins, GST registration filling, bulk GSTR-1/2B/3B downloads, Tally import, GSTR-1 JSON, 3B working and reconciliation.",
   "permissions": [
     "storage",
@@ -37,6 +37,16 @@
         "https://*.gst.gov.in/*"
       ],
       "js": [
+        "hook.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://*.gst.gov.in/*"
+      ],
+      "js": [
         "schema.js",
         "lists.js",
         "docs.js",
@@ -57,5 +67,6 @@
       ],
       "run_at": "document_start"
     }
-  ]
+  ],
+  "minimum_chrome_version": "111"
 }

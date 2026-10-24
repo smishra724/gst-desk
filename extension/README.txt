@@ -24,7 +24,9 @@ CLIENTS TAB
   dates, CIN, jurisdiction, business address, activities, HSN/SAC, partners/directors
   (with DIN) and the authorised signatory. Empty fields are filled straight away; for
   fields that already hold something different you tick what to replace. Masked
-  details (email/mobile shown as ****) are not copied. On any other portal page
+  details (email/mobile shown as ****) are not copied. Everything read is shown in a
+  review box first – untick anything wrong and click "Save ticked details". If something
+  is picked up wrongly, click "Save what was read" on the portal and send that file. On any other portal page
   (e.g. Amendment of non-core fields – look only, don't save) click "Read this page too".
 - "Applying for new registration" shows the full registration form (Part A, promoters,
   address, HSN…). The panel on reg.gst.gov.in fills those pages – as in v1.

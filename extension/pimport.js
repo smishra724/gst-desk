@@ -24,6 +24,7 @@
 
   // label → field (business level). First match wins.
   const RULES = [
+    [/gstin\s*\/\s*uin status|^status$|taxpayer status|gstin status/i, 'reg.status'],
     [/^gstin|gstin\s*\/\s*uin|^registration number/i, 'gstin'],
     [/legal name/i, 'partA.legalName'],
     [/trade name/i, 'business.tradeName'],
@@ -55,12 +56,15 @@
     [/^state$|state name/i, 'state'], [/pin ?code|pincode/i, 'pin'], [/landmark/i, 'landmark'], [/latitude/i, 'latitude'], [/longitude/i, 'longitude']
   ];
 
+  // Words that show a value is an office / address / heading, never a person's or business's name
+  const NOT_NAME = /\b(jurisdiction|commissionerate|division|range|ward|circle|charge|sector|zone|administrative|office|centre|center|address|state\s*-|gstin|place of business|promoters?|partners?\b|directors?\b|signator)/i;
   function personFromCells(get) {
     const full = n(get(/^name$|full name|name of (the )?(partner|director|promoter|proprietor|person)|^partner name|^director name/i));
     const x = { firstName: n(get(/first name/i)), middleName: n(get(/middle name/i)), lastName: n(get(/last name|surname/i)),
       designation: n(get(/designation|status|role/i)), din: n(get(/\bdin\b|dpin|director identification/i)).replace(/\D/g, ''),
       pan: n(get(/\bpan\b|permanent account/i)).toUpperCase(), fatherFirst: '', fatherLast: '', fatherMiddle: '',
       mobile: n(get(/mobile/i)).replace(/\D/g, ''), email: n(get(/e-?mail/i)), dob: toIso(get(/date of birth|\bdob\b/i)), gender: n(get(/gender/i)) };
+    if (full && (NOT_NAME.test(full) || /\d/.test(full))) return null;
     if (!x.firstName && full) { const s = D.splitName(full.toUpperCase()); x.firstName = s.first; x.middleName = s.middle; x.lastName = s.last; }
     const fa = n(get(/father/i));
     if (fa) { const s = D.splitName(fa.toUpperCase()); x.fatherFirst = s.first; x.fatherMiddle = s.middle; x.fatherLast = s.last; }
@@ -70,10 +74,63 @@
     return x.firstName ? x : null;
   }
 
+  /* JSON the portal page downloaded → the same {section, label, value} pairs and tables the screen reader makes.
+     Short GSTN key names are translated; other keys are turned into words ("legalName" → "legal name"). */
+  const KEYS = {
+    gstin: 'GSTIN', lgnm: 'Legal Name of Business', tradeNam: 'Trade Name', trdnm: 'Trade Name', ctb: 'Constitution of Business',
+    rgdt: 'Effective Date of registration', sts: 'GSTIN / UIN Status', dty: 'Taxpayer Type', stj: 'State Jurisdiction', ctj: 'Centre Jurisdiction',
+    nba: 'Nature of Business Activities', ntr: 'Nature of Business Activities', ntcrbs: 'Nature of Core Business', cmpRt: 'Composition',
+    bno: 'Building No', bnm: 'Name of Premises', flno: 'Floor No', st: 'Road / Street', loc: 'Locality', locality: 'Locality', city: 'City',
+    dst: 'District', stcd: 'State', pncd: 'PIN Code', lt: 'Latitude', lg: 'Longitude', landMark: 'Landmark', lndmrk: 'Landmark',
+    fnm: 'First Name', frstNm: 'First Name', mnm: 'Middle Name', lnm: 'Last Name', lstNm: 'Last Name', desig: 'Designation', dsg: 'Designation',
+    din: 'DIN', pan: 'PAN', mobNum: 'Mobile', mbl: 'Mobile', em: 'Email', emailId: 'Email', dob: 'Date of Birth', gen: 'Gender',
+    ffnm: "Father's First Name", flnm: "Father's Last Name", cin: 'CIN', ifsc: 'IFSC', accno: 'Account Number', acNo: 'Account Number',
+    hsncd: 'HSN Code', hsn: 'HSN Code', sac: 'SAC', sacCd: 'SAC', cmdt: 'Description', ctndt: 'Date of Commencement of Business'
+  };
+  const words = (k) => KEYS[k] || String(k).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').toLowerCase();
+  const secOf = (path) => {
+    const s = path.join(' ');
+    if (/adadr|apob|addl|additional/i.test(s)) return 'Additional Place of Business';
+    if (/pradr|ppob|princ/i.test(s)) return 'Principal Place of Business';
+    if (/auth.?sig|signator/i.test(s)) return 'Authorized Signatory';
+    if (/prom|prmtr|partner|director|propr|karta/i.test(s)) return 'Promoters / Partners';
+    if (/bank|bnk|acc/i.test(s)) return 'Bank Accounts';
+    if (/good|hsn|sac|serv|cmdt/i.test(s)) return 'Goods and Services';
+    return 'Business Details';
+  };
+  function fromJson(list) {
+    const pairs = [], tables = [];
+    const walk = (v, path, key) => {
+      if (v == null || v === '') return;
+      if (Array.isArray(v)) {
+        if (!v.length) return;
+        if (v.every(x => x == null || typeof x !== 'object')) { pairs.push({ section: secOf(path), label: words(key), value: v.filter(x => x != null && x !== '').join(', ') }); return; }
+        const objs = v.filter(x => x && typeof x === 'object' && !Array.isArray(x));
+        const flat = objs.map(o => { const r = {}; const f = (x, pre) => { for (const [k, y] of Object.entries(x)) { if (y && typeof y === 'object' && !Array.isArray(y)) f(y, k); else if (y != null && typeof y !== 'object') r[pre && KEYS[k] == null ? pre + ' ' + k : k] = String(y); } }; f(o, ''); return r; });
+        const keys = Array.from(new Set(flat.flatMap(r => Object.keys(r))));
+        if (keys.length) tables.push({ section: secOf(path.concat(key || '')), headers: keys.map(words), rows: flat.map(r => keys.map(k => r[k] || '')) });
+        objs.forEach((o, i) => { for (const [k, y] of Object.entries(o)) if (Array.isArray(y)) walk(y, path.concat(key || '', String(i)), k); });
+        return;
+      }
+      if (typeof v === 'object') { for (const [k, y] of Object.entries(v)) walk(y, key ? path.concat(key) : path, k); return; }
+      if (key) pairs.push({ section: secOf(path.concat(key)), label: words(key), value: String(v) });
+    };
+    for (const j of list || []) walk(j.data, [], '');
+    return { pairs, tables };
+  }
+
   function mapImport(data, p) {
+    if (data && data.json && data.json.length) {
+      const j = fromJson(data.json);
+      data = { ...data, pairs: j.pairs.concat(data.pairs || []), tables: j.tables.concat(data.tables || []) };
+    }
     const out = new Map();
     const info = {};
-    const put = (path, label, value) => { value = n(value); if (!value || masked(value) || out.has(path)) return; out.set(path, { path, label, value }); };
+    const put = (path, label, value) => {
+      value = n(value); if (!value || masked(value) || out.has(path)) return;
+      if (/legalName|tradeName/.test(path) && (NOT_NAME.test(value) || /\d{2}[A-Z]{5}\d{4}/.test(value) || value.length > 120)) return;
+      out.set(path, { path, label, value });
+    };
     const pairs = (data.pairs || []).filter(x => n(x.value) && n(x.value).length < 400);
 
     // --- business-level fields ---
@@ -111,7 +168,7 @@
       const [, path] = r;
       if (path === 'constitution') { const c = CONST.find(([rx]) => rx.test(value)); if (c) put('constitution', 'Constitution of business', c[1]); info.constitution = value; continue; }
       if (path.startsWith('reg.')) { info[path.slice(4)] = value; continue; }
-      if (path === 'gstin') { const g = value.toUpperCase().replace(/\s/g, ''); if (/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(g)) put('gstin', 'GSTIN', g); continue; }
+      if (path === 'gstin') { const g = (value.toUpperCase().replace(/\s/g, '').match(/\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]/) || [])[0]; if (g) put('gstin', 'GSTIN', g); continue; }
       if (/Date$/.test(path)) { const d = toIso(value); if (d) put(path, label, d); continue; }
       if (path === 'business.composition') { put(path, label, /yes|opted|composition taxpayer/i.test(value) && !/^no/i.test(value) ? 'yes' : 'no'); continue; }
       if (path === 'bank.accountType') { const t = G.ACCOUNT_TYPES.find(o => lc(value).startsWith(o.toLowerCase())); if (t) put(path, label, t); continue; }
@@ -122,6 +179,7 @@
     }
 
     // GSTIN gives PAN and state
+    if (!out.has('gstin') && data.gstin) put('gstin', 'GSTIN', data.gstin);
     const gstin = (out.get('gstin') || {}).value || data.gstin || p.gstin;
     if (gstin && /^\d{2}[A-Z]{5}\d{4}/.test(gstin)) {
       put('partA.pan', 'PAN (from GSTIN)', gstin.slice(2, 12));
@@ -156,12 +214,14 @@
     const persons = [];
     const seen = new Set();
     const addPerson = (x, sign) => {
-      if (!x) return;
+      if (!x) return null;
       const key = [x.firstName, x.lastName].join(' ').toUpperCase();
       const ex = persons.find(y => [y.firstName, y.lastName].join(' ').toUpperCase() === key);
-      if (ex) { for (const k of Object.keys(x)) if (x[k] && !ex[k]) ex[k] = x[k]; if (sign) ex.isSignatory = true; return; }
-      if (seen.has(key)) return; seen.add(key);
-      persons.push({ ...x, isSignatory: !!sign });
+      if (ex) { for (const k of Object.keys(x)) if (x[k] && !ex[k]) ex[k] = x[k]; if (sign) ex.isSignatory = true; return ex; }
+      if (seen.has(key)) return null; seen.add(key);
+      const y = { ...x, isSignatory: !!sign };
+      persons.push(y);
+      return y;
     };
     for (const t of data.tables || []) {
       const ctx = t.section + ' ' + t.headers.join(' ');
@@ -182,8 +242,9 @@
     }
     for (const g of groups) {
       const get = (rx) => { const q = g.find(x => rx.test(n(x.label))); return q ? q.value : ''; };
-      addPerson(personFromCells(get), isSign(g[0].section));
-      const x = persons[persons.length - 1];
+      const x = addPerson(personFromCells(get), isSign(g[0].section));
+      const one = get(/^address$|residential address|^address of/i);
+      if (x && !x.address && one && /\d{6}/.test(one)) { const a = D.parseAddress(one); if (a) { const ad = {}; for (const k of ['building', 'floor', 'premises', 'road', 'locality', 'city', 'district', 'state', 'pin', 'landmark']) if (a[k]) ad[k] = a[k]; x.address = ad; } }
       if (x && !x.address) {
         const a = {}; for (const [rx, k] of ADDR) { if (k === 'possession' || k === 'latitude' || k === 'longitude') continue; const v = get(rx); if (v) a[k] = k === 'pin' ? v.replace(/\D/g, '') : v; }
         if (a.state) a.state = G.STATES.find(sx => sx.toLowerCase() === lc(a.state)) || '';
@@ -201,5 +262,5 @@
     return { suggestions, persons, info };
   }
 
-  root.GSTImport = { mapImport };
+  root.GSTImport = { mapImport, fromJson };
 })(typeof window !== 'undefined' ? window : globalThis);

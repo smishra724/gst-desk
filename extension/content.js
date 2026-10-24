@@ -703,7 +703,13 @@
     if (!settings.panelProfile && settings.lastProfile) settings.panelProfile = settings.lastProfile;
     lastShownCtx = detectCtx();
     render();
-    mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+    // Only registration / amendment pages need watching; on the dashboard, returns and profile pages this was just slowing the portal down.
+    const regForm = () => /reg\.gst\.gov\.in|registration|amend|^file:|localhost/i.test(location.href) ||
+      Array.from(document.querySelectorAll('h1,h2,h3,h4,legend,.nav-tabs a')).some(h => /business details|promoters?\s*\/\s*partners|principal place of business|authori[sz]ed signatory/i.test(h.textContent) && !/profile/i.test(location.href));
+    const watch = () => { if (!watch.on && regForm()) { watch.on = true; mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] }); } };
+    watch();
+    window.addEventListener('hashchange', watch);
+    const wi = setInterval(() => { if (watch.on) clearInterval(wi); else watch(); }, 5000);
   })();
 
   // Exposed for the extension's own test page only.

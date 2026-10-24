@@ -686,7 +686,7 @@
     if (!p.portal.username) { toast('Enter the GST ID (portal username) first'); const i = $('[data-path="portal.username"]'); if (i) i.focus(); return; }
     if (p.portal.passwordEnc && !(await App.ensureUnlocked())) return;
     clearTimeout(saveTimer); await store.save();
-    await chrome.storage.local.set({ gstf_import: { clientId: p.id, name: displayName(p), gstin: p.gstin || '', status: 'running', stage: 'login', started: new Date().toISOString() } });
+    await chrome.storage.local.set({ gstf_import: { clientId: p.id, name: displayName(p), gstin: p.gstin || '', status: 'running', stage: 'fresh', started: new Date().toISOString() } });
     chrome.tabs.create({ url: 'https://services.gst.gov.in/services/login' });
     toast(p.portal.passwordEnc ? 'GST portal opened – type the CAPTCHA and click LOGIN' : 'GST portal opened – type the password and CAPTCHA, then LOGIN');
   }
@@ -709,23 +709,60 @@
     return touched.length;
   }
 
+  // Show everything read from the portal; the user ticks what goes into the client master.
   async function applyImport(res) {
     if (!res || !res.clientId || !res.data) return;
     const p = profiles.find(x => x.id === res.clientId);
     if (!p || p.importedAt === res.at) return;
-    if (currentId !== p.id) { currentId = p.id; renderList(); }
-    p.importedAt = res.at;
-    p.status = 'registered';
-    openRegFor = p.id;
+    if (applyImport.busy === res.at) return;
+    applyImport.busy = res.at;
+    if (currentId !== p.id) { currentId = p.id; renderList(); renderEditor(); }
     const m = GSTImport.mapImport(res.data, p);
-    const nPeople = m.persons.length ? mergePersons(p, m.persons) : 0;
-    const acts = m.suggestions.find(s => s.path === 'ppob.activities');
-    if (acts) { p.ppob.activities = Array.from(new Set([...(p.ppob.activities || []), ...acts.list])); }
-    const rest = m.suggestions.filter(s => s !== acts);
-    queueSave(); renderEditor();
-    if (rest.length) await applyFound(p, rest, 'the GST portal');
-    const total = rest.length + (acts ? 1 : 0);
-    toast(total || nPeople ? `Imported from GST portal: ${total} field${total === 1 ? '' : 's'}${nPeople ? `, ${nPeople} partner/director/proprietor record${nPeople > 1 ? 's' : ''}` : ''}` : 'The portal page had nothing new for this client');
+    const people = m.persons;
+    const pname = (x) => [x.firstName, x.middleName, x.lastName].filter(Boolean).join(' ');
+    const ORDER = ['gstin', 'partA.legalName', 'business.tradeName', 'constitution', 'partA.pan', 'partA', 'business', 'ppob.address', 'ppob', 'goods', 'bank', 'stateInfo'];
+    const rank = (pth) => { const i = ORDER.findIndex(o => pth === o || pth.startsWith(o + '.')); return i < 0 ? 99 : i; };
+    const fields = m.suggestions.map(s => ({ ...s, checked: !s.current })).sort((x, y) => rank(x.path) - rank(y.path));
+    const raw = (res.data.pairs || []).map(x => `<tr><td>${esc(x.section)}</td><td>${esc(x.label)}</td><td>${esc(x.value)}</td></tr>`).join('') +
+      (res.data.tables || []).map(t => t.rows.map(r => `<tr><td>${esc(t.section)}</td><td>${esc(t.headers.join(' | '))}</td><td>${esc(r.join(' | '))}</td></tr>`).join('')).join('');
+    const existingNamed = p.persons.filter(x => x.firstName || x.lastName);
+    let dlg = $('#import-dlg');
+    if (!dlg) { dlg = document.createElement('dialog'); dlg.id = 'import-dlg'; dlg.className = 'dlg wide'; document.body.appendChild(dlg); }
+    dlg.innerHTML = `<form method="dialog"><h3>Details read from the GST portal – ${esc(displayName(p))}</h3>
+      <p class="small">Tick what should go into the client master. You can correct any value before saving. Ticked by default: fields that are empty now.</p>
+      ${fields.length ? `<div class="sug">${fields.map((f, i) => `<label class="sug-row"><input type="checkbox" data-fi="${i}"${f.checked ? ' checked' : ''}>
+        <span class="sug-l">${esc(f.label)}</span><input type="text" data-fv="${i}" value="${esc(f.value)}">
+        ${f.current ? `<span class="muted small">now: ${esc(f.current)}</span>` : '<span></span>'}</label>`).join('')}</div>` : '<p class="muted">No new business details on the page(s) read.</p>'}
+      ${people.length ? `<h4>Proprietor / partners / directors found</h4><div class="sug">${people.map((x, i) => `<label class="sug-row"><input type="checkbox" data-pi="${i}" checked>
+        <span class="sug-l">${esc(x.designation || 'Person')}</span><span>${esc(pname(x))}${x.din ? ` · DIN ${esc(x.din)}` : ''}${x.isSignatory ? ' · <b>authorised signatory</b>' : ''}</span><span></span></label>`).join('')}</div>
+        ${existingNamed.length ? `<label class="small"><input type="checkbox" id="imp-replace-people"> Replace the existing list (${esc(existingNamed.map(pname).join(', '))}) with these</label>` : ''}` : ''}
+      <details class="small"><summary>Everything GST Desk read on the portal (${(res.data.pairs || []).length} items)</summary>
+        <div style="max-height:260px;overflow:auto"><table class="tbl"><thead><tr><th>Section</th><th>Label</th><th>Value</th></tr></thead><tbody>${raw}</tbody></table></div></details>
+      <div class="dlg-actions"><button type="button" id="imp-cancel">Cancel</button><button type="submit" class="primary">Save ticked details</button></div></form>`;
+    const done = () => { applyImport.busy = null; };
+    dlg.querySelector('#imp-cancel').onclick = () => { dlg.close(); p.importedAt = res.at; queueSave(); done(); };
+    dlg.querySelector('form').onsubmit = (e) => {
+      e.preventDefault();
+      const paths = [];
+      dlg.querySelectorAll('[data-fi]').forEach(cb => {
+        if (!cb.checked) return;
+        const f = fields[+cb.dataset.fi];
+        let v = dlg.querySelector(`[data-fv="${cb.dataset.fi}"]`).value.trim();
+        if (f.path === 'ppob.activities') { p.ppob.activities = Array.from(new Set([...(p.ppob.activities || []), ...(f.list || v.split(/\s*,\s*/))])); paths.push(f.path); return; }
+        if (/(^|\.)pan$|ifsc|regNo|gstin/i.test(f.path)) v = v.toUpperCase();
+        try { setPath(p, f.path, v); paths.push(f.path); } catch (_) { /* path missing */ }
+      });
+      const chosen = people.filter((_, i) => { const c = dlg.querySelector(`[data-pi="${i}"]`); return c && c.checked; });
+      if (chosen.length && dlg.querySelector('#imp-replace-people') && dlg.querySelector('#imp-replace-people').checked) p.persons = p.persons.filter(x => !x.firstName && !x.lastName);
+      const nPeople = chosen.length ? mergePersons(p, chosen) : 0;
+      if (!p.persons.length) p.persons.push(G.newPerson());
+      p.importedAt = res.at; p.status = 'registered'; openRegFor = p.id;
+      dlg.close(); done();
+      queueSave(); renderEditor(); setTimeout(() => flash(paths), 50);
+      toast(`Saved ${paths.length} detail${paths.length === 1 ? '' : 's'}${nPeople ? ` and ${nPeople} person${nPeople > 1 ? 's' : ''}` : ''} from the GST portal`);
+    };
+    dlg.addEventListener('close', done, { once: true });
+    dlg.showModal();
   }
   chrome.storage.onChanged.addListener((ch, area) => {
     if (area === 'local' && ch.gstf_import_result && ch.gstf_import_result.newValue) applyImport(ch.gstf_import_result.newValue);
@@ -1051,5 +1088,7 @@
     const v = (location.hash || '').slice(1);
     showView(['downloads', 'work'].includes(v) ? v : 'clients');
     if (v === 'clients-new') createProfile();
+    const pending = (await chrome.storage.local.get('gstf_import_result')).gstf_import_result;
+    if (pending) applyImport(pending);
   })();
 })();

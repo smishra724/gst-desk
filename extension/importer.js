@@ -15,8 +15,19 @@
   const send = (msg) => new Promise(res => { try { chrome.runtime.sendMessage(msg, r => { void chrome.runtime.lastError; res(r || {}); }); } catch (_) { res({}); } });
   const load = async () => (await chrome.storage.local.get(KEY))[KEY] || null;
   const mutate = async (fn) => { const r = await load(); if (!r) return null; fn(r); await chrome.storage.local.set({ [KEY]: r }); return r; };
-  const visible = (e) => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length)) && getComputedStyle(e).visibility !== 'hidden';
-  const GSTIN_RX = /\b\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]\b/g;
+  const visible = (e) => !!e && (e.checkVisibility ? e.checkVisibility({ visibilityProperty: true }) : !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length) && getComputedStyle(e).visibility !== 'hidden');
+
+  /* ---------- JSON the portal page itself downloaded (copied by hook.js) ---------- */
+  const jsonBag = [];
+  window.addEventListener('message', (e) => {
+    if (e.source !== window || !e.data || e.data.__gstf !== 'json') return;
+    const s = JSON.stringify(e.data.data);
+    if (jsonBag.some(j => j.s === s)) return;
+    jsonBag.push({ url: e.data.url, data: e.data.data, s });
+    if (jsonBag.length > 30) jsonBag.shift();
+  });
+  window.postMessage({ __gstf: 'flush' }, location.origin);
+  const jsonForResult = () => { let size = 0; const out = []; for (const j of jsonBag.slice().reverse()) { size += j.s.length; if (size > 600000) break; out.unshift({ url: j.url, data: j.data }); } return out; };
 
   /* ---------- banner ---------- */
   const host = document.createElement('div');
@@ -32,9 +43,13 @@
     button{font:inherit;font-size:12px;border:1px solid #4a5263;background:#2a3245;color:#fff;border-radius:7px;padding:5px 10px;cursor:pointer}
     button.p{background:#3b7be0;border-color:#3b7be0}`;
   let view = { msg: '', you: '', err: '', ok: '' };
+  let lastKey = '';
   function banner(run, patch = {}) {
     view = { ...view, ...patch };
     if (!run || run.status === 'stopped') { host.remove(); return; }
+    const key = JSON.stringify([view, run.status, run.stage, run.name]);
+    if (host.isConnected && key === lastKey) return;   // nothing changed – don't redraw (redrawing every tick made buttons hard to click)
+    lastKey = key;
     if (!host.isConnected) document.documentElement.appendChild(host);
     sh.innerHTML = `<style>${BANNER_CSS}</style><div class="b" role="status" aria-live="polite">
       <div><b>GST Desk · Importing details${run.name ? ' – ' + esc(run.name) : ''}</b><div class="s">${esc(view.msg || '')}</div></div>
@@ -45,11 +60,19 @@
         <button class="${run.status === 'done' ? '' : 'p'}" id="read">${run.status === 'done' ? 'Read this page too' : 'Read this page'}</button>
         ${run.status !== 'done' && run.stage === 'profile' ? '<button id="teach">Teach: I’ll click the profile link</button>' : ''}
         <button id="mgr">Open GST Desk</button>
+        ${run.status === 'done' ? '<button id="diag" title="Saves a file of what GST Desk read on the portal, to send if something was picked up wrongly">Save what was read</button>' : ''}
         <button id="stop">${run.status === 'done' ? 'Close' : 'Stop'}</button>
       </div></div>`;
     const on = (id, fn) => { const e = sh.getElementById(id); if (e) e.onclick = fn; };
     on('read', () => readHere(true));
     on('teach', () => teachProfile());
+    on('diag', async () => {
+      const r = (await chrome.storage.local.get(RESULT))[RESULT];
+      if (!r) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify({ page: location.href, read: r.data }, null, 1)], { type: 'application/json' }));
+      a.download = 'gst-desk-portal-read.json'; document.body.appendChild(a); a.click(); a.remove();
+    });
     on('mgr', () => send({ type: 'open-manager', hash: '#clients' }));
     on('stop', () => mutate(r => { r.status = 'stopped'; }).then(() => { host.remove(); window.__gstfAutopilotOn = false; }));
   }
@@ -79,55 +102,114 @@
     return n(c.getAttribute('aria-label') || c.placeholder || c.name || '');
   }
 
+  // Page chrome that never holds the client's details (menus, header bar, footer, our own panels)
+  const SKIP_SEL = '[role=tablist], .nav-tabs, .nav-pills, ul.nav, .navbar, .breadcrumb, .dropdown-menu, [role=navigation], [role=menu], .quick-links, .footer, #footer, .modal:not(.in):not(.show)';
+  const DESIG = /^(managing |designated |working |sleeping |whole[- ]time |executive |non[- ]executive |independent |additional )?(partner|director|proprietor|karta|member|trustee|coparcener|chairman|chairperson|ceo|cfo|secretary|managing director|authori[sz]ed signatory)s?$/i;
+  const nameText = (t) => n(String(t).replace(/[^A-Za-z .'\-]+/g, ' '));
+  const looksLikeName = (t) => { const x = nameText(t); return x.length >= 3 && x.length >= n(t).length - 3 && /^[A-Za-z][A-Za-z .'-]{2,60}$/.test(x) && x.split(' ').length <= 6 && !isLabel(x) && !DESIG.test(x) &&
+    !/\b(jurisdiction|office|commissionerate|division|range|ward|circle|charge|state|zone|address|business|services?|limited|ltd|llp|private|india|road|street|nagar|floor|building|district|details|contacts?|place|signatory|promoters?|partners|directors|profile|registration|status)\b/i.test(x); };
+
   function collect(defaultSection) {
     const data = { pairs: [], tables: [], gstin: '' };
     let section = defaultSection || '';
     const leaves = [];
+    const sx = window.scrollX, sy = window.scrollY;
     const walk = (el) => {
       for (const c of el.children) {
-        if (c === host || /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|OPTION|BUTTON|NAV|HEADER|FOOTER)$/.test(c.tagName)) continue;
+        if (c === host || /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|OPTION|BUTTON|NAV|HEADER|FOOTER|SVG|IMG|IFRAME)$/i.test(c.tagName)) continue;
         if (!visible(c)) continue;
-        if (c.matches('[role=tablist], .nav-tabs, .nav-pills, ul.nav, .breadcrumb, .dropdown-menu')) continue;
+        if (c.matches(SKIP_SEL)) continue;
         if (HEADING(c)) { const t = clean(c.innerText); if (t && t.length < 90) { section = t; continue; } }
         if (c.tagName === 'TABLE') { if (!c.querySelector('table')) readTable(c, section, data); else walk(c); continue; }
         if (/^(INPUT|SELECT|TEXTAREA)$/.test(c.tagName)) { readControl(c, section, data); continue; }
-        if (c.tagName === 'DL') { const dts = c.querySelectorAll('dt'); dts.forEach(dt => { const dd = dt.nextElementSibling; if (dd && dd.tagName === 'DD') data.pairs.push({ section, label: clean(dt.innerText), value: n(dd.innerText) }); }); continue; }
+        if (c.tagName === 'DL') { c.querySelectorAll('dt').forEach(dt => { const dd = dt.nextElementSibling; if (dd && dd.tagName === 'DD') data.pairs.push({ section, label: clean(dt.innerText).replace(/:$/, ''), value: n(dd.innerText) }); }); continue; }
         const kids = Array.from(c.children);
         if (!kids.length || kids.every(k => INLINE.has(k.tagName) && !k.querySelector('div,p,table,ul,li,input,select,textarea,h1,h2,h3,h4,h5,h6'))) {
-          const ctl = c.querySelector('input,select,textarea'); if (ctl) { walk(c); continue; }
+          if (c.querySelector('input,select,textarea')) { walk(c); continue; }
           const t = n(c.innerText);
-          if (t) leaves.push({ text: t, section });
+          if (t) {
+            const r = c.getBoundingClientRect();
+            // a leaf that is one block of bold text followed by plain text ("<b>Label</b> value") is split
+            const first = c.firstElementChild;
+            if (first && /^(B|STRONG|LABEL)$/.test(first.tagName) && c.childNodes[0] === first && isLabel(n(first.innerText)) && n(first.innerText).length < t.length) {
+              leaves.push({ text: `${clean(first.innerText).replace(/:$/, '')}: ${n(t.slice(n(first.innerText).length)).replace(/^[:\-\s]+/, '')}`, section, x: r.left + sx, y: r.top + sy, w: r.width, h: r.height });
+            } else leaves.push({ text: t, section, x: r.left + sx, y: r.top + sy, w: r.width, h: r.height });
+          }
           continue;
         }
         walk(c);
       }
     };
     walk(document.body);
-    // Pair labels with the values that follow them
-    const used = new Set();
+
+    // 1. "Label: value" written in one line
+    const taken = new Set();
+    leaves.forEach((L, i) => {
+      const inl = /^([^:]{2,60}):\s*(.+)$/.exec(L.text);
+      if (inl && isLabel(inl[1] + ':') && !isLabel(inl[2])) { data.pairs.push({ section: L.section, label: clean(inl[1]), value: n(inl[2]) }); taken.add(i); L.inline = true; }
+    });
+    // 2. Labels get the value nearest to them on screen: just below in the same column, or to the right on the same line.
+    //    (Works whether the page lists label/value one after another or puts a row of labels above a row of values.)
+    const labels = [], cands = [];
+    leaves.forEach((L, i) => { if (!taken.has(i) && isLabel(L.text)) labels.push(i); });
+    const isLab = new Set(labels);
+    for (const li of labels) {
+      const L = leaves[li];
+      leaves.forEach((V, vi) => {
+        if (vi === li || isLab.has(vi) || taken.has(vi)) return;
+        const below = V.y >= L.y + L.h - 3 && V.y - (L.y + L.h) < 45 && Math.abs(V.x - L.x) < 25;
+        const right = Math.abs((V.y + V.h / 2) - (L.y + L.h / 2)) < Math.max(L.h, V.h) / 2 + 3 && V.x >= L.x + L.w - 3 && V.x - (L.x + L.w) < 320;
+        if (below) cands.push({ li, vi, d: V.y - (L.y + L.h) });
+        else if (right) cands.push({ li, vi, d: V.x - (L.x + L.w) + 6 });
+      });
+    }
+    cands.sort((a, b) => a.d - b.d);
+    const valOf = new Map(), usedV = new Set();
+    for (const c of cands) { if (valOf.has(c.li) || usedV.has(c.vi)) continue; valOf.set(c.li, c.vi); usedV.add(c.vi); }
+    for (const li of labels) {
+      const L = leaves[li];
+      const label = clean(L.text).replace(/:$/, '');
+      if (!valOf.has(li)) continue;
+      const vals = [leaves[valOf.get(li)]];
+      // continue down the same column for multi-line values (addresses, lists of names / activities)
+      const people = PEOPLE_LIST.test(label);
+      for (;;) {
+        const last = vals[vals.length - 1];
+        const nx = leaves.findIndex((V, vi) => !usedV.has(vi) && !isLab.has(vi) && !taken.has(vi) && Math.abs(V.x - last.x) < 12 &&
+          V.y >= last.y + last.h - 3 && V.y - (last.y + last.h) < (people ? 30 : 10));
+        if (nx < 0 || vals.length >= 25) break;
+        usedV.add(nx); vals.push(leaves[nx]);
+      }
+      vals.forEach(v => { v.used = true; });
+      if (people) vals.forEach(v => data.pairs.push({ section: /promot|partner|director|proprietor|karta|member|trustee/i.test(L.section) ? L.section : 'Promoters / Partners (' + label + ')', label: 'Name', value: v.text }));
+      else data.pairs.push({ section: L.section, label, value: vals.map(v => v.text).join(', ') });
+    }
+    // 3. People shown as cards under a Promoters / Partners / Authorised signatory heading: name, then designation and address lines
+    const PEOPLE_SEC = /promot|partner|director|proprietor|karta|trustee|authori[sz]ed signator/i;
     for (let i = 0; i < leaves.length; i++) {
       const L = leaves[i];
-      if (!isLabel(L.text) && !/^([^:]{2,60}):\s*(.+)$/.test(L.text) && /promot|partner|director|proprietor|karta|trustee|authori[sz]ed signator/i.test(L.section) &&
-        /^[A-Za-z][A-Za-z .'-]{2,60}$/.test(L.text) && L.text.split(' ').length <= 6 && !used.has(i) && !(i > 0 && isLabel(leaves[i - 1].text) && leaves[i - 1].section === L.section)) {
-        data.pairs.push({ section: L.section, label: 'Name', value: L.text });
-        continue;
+      if (taken.has(i) || isLab.has(i) || L.used || !PEOPLE_SEC.test(L.section) || !looksLikeName(L.text)) continue;
+      data.pairs.push({ section: L.section, label: 'Name', value: nameText(L.text) });
+      for (let j = i + 1; j < leaves.length && j <= i + 6; j++) {
+        const V = leaves[j];
+        if (V.section !== L.section || taken.has(j) || isLab.has(j) || V.used || looksLikeName(V.text)) break;
+        if (DESIG.test(nameText(V.text))) data.pairs.push({ section: L.section, label: 'Designation', value: nameText(V.text) });
+        else if (/\b\d{6}\b/.test(V.text)) data.pairs.push({ section: L.section, label: 'Address', value: V.text });
+        V.used = true;
       }
-      const inl = /^([^:]{2,60}):\s*(.+)$/.exec(L.text);
-      if (inl && isLabel(inl[1] + ':') && !isLabel(inl[2])) { data.pairs.push({ section: L.section, label: clean(inl[1]), value: n(inl[2]) }); continue; }
-      if (!isLabel(L.text)) continue;
-      const label = clean(L.text).replace(/:$/, '');
-      const vals = [];
-      let j = i + 1;
-      while (j < leaves.length && vals.length < 25 && !isLabel(leaves[j].text) && leaves[j].section === L.section) { vals.push(leaves[j].text); j++; }
-      if (!vals.length) continue;
-      if (PEOPLE_LIST.test(label)) vals.forEach(v => data.pairs.push({ section: /promot|partner|director|proprietor|karta|member|trustee/i.test(L.section) ? L.section : 'Promoters / Partners (' + label + ')', label: 'Name', value: v }));
-      else data.pairs.push({ section: L.section, label, value: vals.join(', ') });
-      i = j - 1;
     }
-    const top = (document.body.innerText.match(GSTIN_RX) || [])[0];
-    const g = data.pairs.find(p => /^gstin/i.test(p.label) && GSTIN_RX.test(p.value)); GSTIN_RX.lastIndex = 0;
-    data.gstin = g ? (g.value.match(GSTIN_RX) || [])[0] : top || '';
+    const g = data.pairs.find(p => /^gstin/i.test(p.label) && /\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]/.test(p.value));
+    const anyG = leaves.map(l => (l.text.match(/\b\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]\b/) || [])[0]).find(Boolean);
+    data.gstin = g ? g.value.match(/\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]/)[0] : anyG || pageGstins()[0] || '';
     return data;
+  }
+  // GSTINs in the page header / welcome bar (read once per page – innerText of the whole page is slow)
+  let gCache = null;
+  function pageGstins() {
+    if (gCache && gCache.url === location.href && Date.now() - gCache.at < 8000) return gCache.list;
+    const list = Array.from(new Set(document.body.textContent.match(/\b\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]\b/g) || []));
+    gCache = { url: location.href, at: Date.now(), list };
+    return list;
   }
 
   function readControl(c, section, data) {
@@ -169,20 +251,26 @@
     const ts = new Set(a.tables.map(tk));
     for (const t of b.tables) if (!ts.has(tk(t))) { ts.add(tk(t)); a.tables.push(t); }
     a.gstin = a.gstin || b.gstin;
+    const js = new Set((a.json || []).map(j => JSON.stringify(j.data)));
+    a.json = (a.json || []).concat((b.json || []).filter(j => !js.has(JSON.stringify(j.data))));
     return a;
   }
 
   async function readWithTabs() {
     let data = collect('');
-    const tabs = Array.from(document.querySelectorAll('[role=tab], .nav-tabs a, .nav-pills a, ul.nav a, .tabs a, .tab-links a'))
-      .filter(e => visible(e) && !host.contains(e) && !/log ?out|sign ?out|home|help|search|download|print|edit|amend|cancel|delete|submit|file|pay/i.test(n(e.innerText)) &&
+    const MENU_ACT = /log ?out|sign ?out|download|print|edit|amend|cancel|delete|submit|certificate|change password|activate|deactivate|register|update|e-?invoice|e-?way/i;
+    const MENU_EXACT = /^(home|help|search|services|user services|gst law|dashboard|news|downloads?|file|pay|returns?|payments?|ledgers?)$/i;
+    const MENU = { test: (t) => MENU_ACT.test(t) || MENU_EXACT.test(n(t)) };
+    const tabs = Array.from(document.querySelectorAll('[role=tab], [data-toggle=tab], [data-bs-toggle=tab], .nav-tabs > li > a, .nav-tabs > li > button, .nav-pills > li > a'))
+      .filter(e => visible(e) && !host.contains(e) && !e.closest('.navbar, header, nav:not(.tabs), [role=navigation], .dropdown-menu, footer') &&
+        !MENU.test(n(e.textContent)) && n(e.textContent).length < 50 &&
         (!e.getAttribute('href') || /^(#|javascript)/i.test(e.getAttribute('href'))))
-      .slice(0, 14);
+      .slice(0, 8);
     for (const tab of tabs) {
       if (!tab.isConnected) continue;
       const name = clean(tab.innerText);
       tab.click();
-      await sleep(900);
+      await sleep(700);
       data = merge(data, collect(name));
     }
     return data;
@@ -192,10 +280,13 @@
     const run = await load();
     if (!run) return;
     banner(run, { msg: 'Reading this page…', you: '', err: '' });
+    // wait for the page's details to finish loading (the portal fills them in after the page opens)
+    for (let i = 0; i < 12 && !jsonBag.length && !/legal name|trade name|constitution of business|gstin/i.test(document.body.textContent.slice(0, 200000)); i++) await sleep(500);
     const data = await readWithTabs();
-    const got = data.pairs.length + data.tables.reduce((s, t) => s + t.rows.length, 0);
+    data.json = jsonForResult();
+    const got = data.pairs.length + data.tables.reduce((s, t) => s + t.rows.length, 0) + data.json.length;
     if (!got) { banner(run, { msg: '', err: 'Nothing readable on this page. Open the client’s profile (Dashboard → View/My Profile) and click “Read this page”.' }); return; }
-    if (run.gstin && data.gstin && data.gstin !== run.gstin && !(document.body.innerText.includes(run.gstin))) {
+    if (run.gstin && data.gstin && data.gstin !== run.gstin && !pageGstins().includes(run.gstin)) {
       banner(run, { msg: '', err: `This page is for ${data.gstin}, but the client’s GSTIN is ${run.gstin}. Log out and log in with this client’s GST ID.` });
       return;
     }
@@ -211,8 +302,8 @@
   const PROFILE_RX = /^(my profile|view profile|profile|view my profile|taxpayer profile)$/i;
   function findProfileLink(taught) {
     const els = Array.from(document.querySelectorAll('a, button, [role=link], [role=menuitem], li[ng-click], span[ng-click]')).filter(e => !host.contains(e));
-    if (taught) { const t = els.find(e => n(e.innerText || e.textContent) === taught && (visible(e) || e.tagName === 'A')); if (t) return t; }
-    return els.find(e => PROFILE_RX.test(n(e.innerText || e.textContent)) && (visible(e) || (e.tagName === 'A' && e.getAttribute('href') && !/^#$/.test(e.getAttribute('href')))));
+    if (taught) { const t = els.find(e => n(e.textContent) === taught && (visible(e) || e.tagName === 'A')); if (t) return t; }
+    return els.find(e => PROFILE_RX.test(n(e.textContent)) && (visible(e) || (e.tagName === 'A' && e.getAttribute('href') && !/^#$/.test(e.getAttribute('href')))));
   }
   let teaching = false;
   function teachProfile() {
@@ -256,7 +347,7 @@
     if (cap) { cap.scrollIntoView({ block: 'center' }); cap.focus(); cap.style.outline = '3px solid #d97706'; }
     return true;
   }
-  const loggedIn = () => Array.from(document.querySelectorAll('a,button')).some(e => !host.contains(e) && (/log ?out|sign ?out/i.test(n(e.innerText)) || /logout/i.test(e.getAttribute('href') || '')));
+  const loggedIn = () => !!document.querySelector('a[href*=logout i], [ng-click*=logout i]') || Array.from(document.querySelectorAll('a,button')).some(e => !host.contains(e) && /^(log ?out|sign ?out)$/i.test(n(e.textContent)));
 
   /* ---------- main loop ---------- */
   let busy = false;
@@ -272,8 +363,19 @@
       if (!run.loginNav || Date.now() - run.loginNav > 15000) { await mutate(r => { r.loginNav = Date.now(); }); location.href = 'https://services.gst.gov.in/services/login'; }
       return;
     }
+    // Someone is already logged in when the import starts: keep it only if it is this client, otherwise log out first.
+    if (run.stage === 'fresh') {
+      if (run.gstin && pageGstins().includes(run.gstin)) await mutate(r => { r.stage = 'profile'; });
+      else {
+        await mutate(r => { r.stage = 'login'; });
+        banner(await load(), { msg: 'Logging out the previous login first…', you: '', err: '' });
+        const out = Array.from(document.querySelectorAll('a, button')).find(e => !host.contains(e) && /^\s*(log ?out|sign ?out)\s*$/i.test(e.textContent || '')) || document.querySelector('a[href*=logout i]');
+        if (out) out.click(); else location.href = 'https://services.gst.gov.in/services/logout';
+        return;
+      }
+    }
     // Logged in. Is it the right client?
-    const pageG = (document.body.innerText.match(GSTIN_RX) || []);
+    const pageG = pageGstins();
     if (run.gstin && pageG.length && !pageG.includes(run.gstin) && !run.mismatchOk) {
       banner(run, { msg: '', err: `The portal is logged in as ${pageG[0]}, not ${run.gstin} (${run.name}). Log out, then log in with this client’s GST ID.` });
       return;
@@ -304,6 +406,6 @@
     busy = false;
   }
   chrome.storage.onChanged.addListener((ch, area) => { if (area === 'local' && ch[KEY]) tick(); });
-  setInterval(tick, 1500);
+  setInterval(() => { if (!document.hidden) tick(); }, 2000);
   setTimeout(tick, 600);
 })();

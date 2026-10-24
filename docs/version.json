@@ -1,6 +1,6 @@
 {
-  "version": "2.7.0",
+  "version": "2.7.1",
   "zip": "gst-desk.zip",
-  "notes": "Client master: GST ID and GST password fields, and one-click import of all registration details from the GST portal profile.",
+  "notes": "GST portal import fixed: GSTIN imported, jurisdiction no longer lands in name fields, review box before saving, faster portal pages.",
   "storeUrl": ""
 }
