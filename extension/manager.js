@@ -131,10 +131,12 @@
       <span class="msg"></span>${o.help ? `<span class="help">${o.help}</span>` : ''}</div>`;
   }
   function districtField(path, state, o = {}) {
-    const list = state ? (lists.districts[state] || []) : [];
-    const help = !state ? 'Choose the state first'
-      : !list.length ? `<button class="link" data-act="load-districts">Load ${esc(state)} districts from the GST portal</button>` : '';
-    return selectHtml(path, 'District', list, { ...o, disabled: !state, empty: !state ? 'Choose the state first' : list.length ? 'Select district…' : 'List not loaded yet', help });
+    const fromPortal = state && lists.districts[state] && lists.districts[state].length ? lists.districts[state] : null;
+    const list = state ? (fromPortal || (window.GST_DISTRICTS || {})[state] || []) : [];
+    const help = !state ? '' : fromPortal ? '<span class="muted">List from the GST portal</span>'
+      : `<button class="link" data-act="load-districts" title="Reads the exact district names the GST portal uses">Use the GST portal's exact list</button>`;
+    const html = selectHtml(path, 'District', list, { ...o, disabled: !state, empty: !state ? 'Choose the state first' : 'Select district…', help });
+    return state ? html.replace('</select>', '<option value="__other">Other – type the name…</option></select>') : html;
   }
   function jurisdictionBlock(p) {
     const state = p.ppob.address.state || p.partA.state;
@@ -259,7 +261,7 @@
           ${isCo ? fld(`${b}.din`, p.constitution === 'llp' ? 'DPIN / DIN' : 'DIN', { span: 3, digits: true, maxlength: 8 }) : ''}
           ${fld(`${b}.citizen`, 'Citizen of India', { span: 3, type: 'seg', options: yesno })}
           <div class="f s12 doc-trio"><span class="lbl">Documents – details are filled in automatically</span><div class="trio">
-            ${dz(`person:${x.id}:pan`, '')}${dz(`person:${x.id}:aadhaar`, '')}${dz(`person:${x.id}:photo`, '')}</div></div>
+            ${dz(`person:${x.id}:pan`, '')}${dz(`person:${x.id}:photo`, '')}${dz(`person:${x.id}:aadhaar`, '')}${dz(`person:${x.id}:aadhaarBack`, '')}</div></div>
           <div class="sub-h"><span>Residential address</span><button class="link" data-act="copy-ppob" data-i="${i}">Copy business address</button></div>
           ${addressBlock(`${b}.address`)}
         </div></div>
@@ -305,6 +307,7 @@
         ${fld('partA.legalName', 'Legal name of business (exactly as per PAN)', { span: 8, req: true })}
         ${fld('partA.pan', 'PAN of business', { span: 4, req: true, upper: true, maxlength: 10, help: `4th letter should be ${C.panChar}` })}
         ${dz('entity:pan')}
+        ${p.constitution === 'proprietorship' && p.persons[0] ? `<div class="f s12"><span class="lbl">Proprietor's PAN card – fills the legal name, PAN and the proprietor's details</span>${dz(`person:${p.persons[0].id}:pan`, '')}</div>` : ''}
         ${fld('partA.state', 'State / UT', { span: 4, type: 'select', options: G.STATES, req: true })}
         ${districtField('partA.district', p.partA.state, { span: 4, req: true })}
         ${fld('partA.mobile', 'Mobile of authorised signatory', { span: 4, type: 'tel', req: true, digits: true, maxlength: 10 })}
@@ -388,6 +391,8 @@
   }
   let districtsRequested = false;
   function autoLoadDistricts(p) {
+    return; // built-in list is always available; the portal list is loaded on request
+    // eslint-disable-next-line no-unreachable
     if (!chrome.tabs || districtsRequested || p.status !== 'new' || Object.keys(lists.districts).length) return;
     try { if (sessionStorage.getItem('gstf_dist_req')) return; sessionStorage.setItem('gstf_dist_req', '1'); } catch (_) { /* ignore */ }
     requestDistricts(true);
@@ -783,6 +788,12 @@
       queueSave(); renderEditor(); renderList();
       return;
     }
+    if (v === '__other') {
+      const typed = (prompt('Type the district name exactly as on the GST portal:') || '').trim();
+      v = typed;
+      if (!typed) { renderEditor(); return; }
+      setPath(p, path, v); queueSave(); renderEditor(); return;
+    }
     setPath(p, path, v);
     if (path === 'business.commissionerate') { p.business.division = ''; p.business.range = ''; }
     if (path === 'business.division') p.business.range = '';
@@ -790,8 +801,8 @@
     if (/(^|\.)state$/.test(path) || /^business\.(commissionerate|division)$/.test(path)) {
       if (/address\.state$|partA\.state$/.test(path)) {
         const dpath = path.replace(/state$/, 'district');
-        const list = lists.districts[v] || [];
-        if (getPath(p, dpath) && !list.includes(getPath(p, dpath)) && list.length) setPath(p, dpath, '');
+        const list = (lists.districts[v] && lists.districts[v].length ? lists.districts[v] : (window.GST_DISTRICTS || {})[v]) || [];
+        if (getPath(p, dpath) && !list.includes(getPath(p, dpath))) setPath(p, dpath, '');
       }
       renderEditor();
       const again = $(`[data-path="${CSS.escape(path)}"]`); if (again) again.focus();

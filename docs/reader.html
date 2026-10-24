@@ -27,8 +27,46 @@ async function ocr(image) {
     if (!window.Tesseract) await loadScript(TESS);
     worker = await window.Tesseract.createWorker('eng');
   }
-  const { data } = await worker.recognize(image);
+  const { data } = await worker.recognize(image, { rotateAuto: true });
   return data.text || '';
+}
+// Clean-up passes: OCR reads phone photos much better when they are enlarged and sharpened.
+function variants(src) {
+  const w0 = src.width, h0 = src.height;
+  const target = w0 < 1800 ? 1800 : Math.min(w0, 2400);
+  const k = target / w0, w = Math.round(w0 * k), h = Math.round(h0 * k);
+  const base = document.createElement('canvas'); base.width = w; base.height = h;
+  const bx = base.getContext('2d', { willReadFrequently: true });
+  bx.imageSmoothingQuality = 'high'; bx.drawImage(src, 0, 0, w, h);
+  const img = bx.getImageData(0, 0, w, h), d = img.data;
+  const hist = new Array(256).fill(0);
+  for (let i = 0; i < d.length; i += 4) { const g = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000 | 0; d[i] = d[i + 1] = d[i + 2] = g; hist[g]++; }
+  bx.putImageData(img, 0, 0);
+  const total = w * h; let lo = 0, hi = 255, acc = 0;
+  for (; lo < 255 && (acc += hist[lo]) < total * 0.01; lo++);
+  acc = 0; for (; hi > 0 && (acc += hist[hi]) < total * 0.01; hi--);
+  const contrast = document.createElement('canvas'); contrast.width = w; contrast.height = h;
+  const cx = contrast.getContext('2d', { willReadFrequently: true });
+  const c = new ImageData(new Uint8ClampedArray(d), w, h), cd = c.data, span = Math.max(1, hi - lo);
+  for (let i = 0; i < cd.length; i += 4) { const v = Math.max(0, Math.min(255, (cd[i] - lo) * 255 / span)); cd[i] = cd[i + 1] = cd[i + 2] = v; }
+  cx.putImageData(c, 0, 0);
+  const sharp = document.createElement('canvas'); sharp.width = w; sharp.height = h;
+  const sx = sharp.getContext('2d');
+  const out = new ImageData(w, h), od = out.data;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4;
+    const at = (xx, yy) => cd[((Math.min(h - 1, Math.max(0, yy)) * w) + Math.min(w - 1, Math.max(0, xx))) * 4];
+    const v = 5 * at(x, y) - at(x - 1, y) - at(x + 1, y) - at(x, y - 1) - at(x, y + 1);
+    od[i] = od[i + 1] = od[i + 2] = Math.max(0, Math.min(255, v)); od[i + 3] = 255;
+  }
+  sx.putImageData(out, 0, 0);
+  return [base, contrast, sharp];
+}
+async function ocrAll(src, progress) {
+  const texts = [];
+  const vs = variants(src);
+  for (let i = 0; i < vs.length; i++) { progress(`Reading the text (pass ${i + 1} of ${vs.length})…`); texts.push(await ocr(vs[i])); }
+  return texts;
 }
 async function readPdf(bytes, password, progress) {
   const lib = await loadPdf();
@@ -53,18 +91,22 @@ async function readPdf(bytes, password, progress) {
     text += '\n';
   }
   if (text.replace(/\s/g, '').length > 30) return { text, method: 'pdf-text' };
-  // Scanned PDF: render pages and recognise the text
+  // Scanned PDF: render the first page(s) and recognise the text
   progress('Reading the scanned pages…');
-  let all = '';
-  for (let i = 1; i <= Math.min(doc.numPages, 2); i++) {
-    const page = await doc.getPage(i);
-    const vp = page.getViewport({ scale: 2.2 });
-    const canvas = document.createElement('canvas');
-    canvas.width = vp.width; canvas.height = vp.height;
-    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-    all += await ocr(canvas) + '\n';
+  const page = await doc.getPage(1);
+  const vp = page.getViewport({ scale: 2.2 });
+  const canvas = document.createElement('canvas');
+  canvas.width = vp.width; canvas.height = vp.height;
+  await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+  const texts = await ocrAll(canvas, progress);
+  if (doc.numPages > 1) { // e.g. Aadhaar front and back on two pages
+    const p2 = await doc.getPage(2); const v2 = p2.getViewport({ scale: 2.2 });
+    const c2 = document.createElement('canvas'); c2.width = v2.width; c2.height = v2.height;
+    await p2.render({ canvasContext: c2.getContext('2d'), viewport: v2 }).promise;
+    const t2 = await ocrAll(c2, progress);
+    for (let i = 0; i < texts.length; i++) texts[i] += '\n' + (t2[i] || '');
   }
-  return { text: all, method: 'ocr' };
+  return { text: texts[0], texts, method: 'ocr' };
 }
 
 window.addEventListener('message', async (e) => {
@@ -76,8 +118,13 @@ window.addEventListener('message', async (e) => {
   try {
     let r;
     if (/pdf/.test(d.type)) r = await readPdf(new Uint8Array(d.bytes), d.password, progress);
-    else { progress('Reading text from the image…'); r = { text: await ocr(new Blob([d.bytes], { type: d.type })), method: 'ocr' }; }
-    reply({ ok: true, text: r.text, method: r.method });
+    else {
+      progress('Reading text from the image…');
+      const bmp = await createImageBitmap(new Blob([d.bytes], { type: d.type }), { imageOrientation: 'from-image' });
+      const texts = await ocrAll(bmp, progress);
+      r = { text: texts[0], texts, method: 'ocr' };
+    }
+    reply({ ok: true, text: r.text, texts: r.texts || null, method: r.method });
   } catch (err) {
     reply({ ok: false, error: err.code || err.message || String(err) });
   }

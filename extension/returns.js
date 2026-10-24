@@ -307,7 +307,13 @@
     const recipe = RECIPES[job.file];
     if (job.status === 'pending') { job.status = 'running'; job.step = 0; await saveQueue(q); }
     const idx = job.step || 0;
-    if (idx >= recipe.length) { job.status = job.status === 'running' ? 'failed' : job.status; job.note = job.note || 'finished without a file'; await saveQueue(q); return tick2(); }
+    if (idx >= recipe.length) {
+      // A download was just clicked (e.g. a button you taught) – give Chrome time to report it before giving up
+      if (job.waitingSince && Date.now() - job.waitingSince < 60000 && await waitDownloaded(job.id, 30000)) return tick2();
+      const q2 = await loadQueue(); const j2 = q2.items[q2.cur.item].jobs.find(x => x.id === job.id);
+      if (j2 && j2.status === 'running') { j2.status = 'failed'; j2.note = j2.note || 'finished without a file'; await saveQueue(q2); }
+      return tick2();
+    }
     const s = recipe[idx];
     banner(q, { msg: s.name || (s.do === 'period' ? `Selecting ${job.period}` : s.do === 'dashboard' ? 'Opening returns dashboard' : s.do), err: '' });
 

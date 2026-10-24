@@ -24,7 +24,8 @@
       const nm = G.fullName(x) || `${C.person} ${i + 1}`;
       out.push({ key: `person:${x.id}:photo`, label: `Photograph – ${nm}`, short: 'Photo', kind: 'photo', who: x.id, personIndex: i });
       out.push({ key: `person:${x.id}:pan`, label: `PAN card – ${nm}`, short: 'PAN card', kind: 'doc', who: x.id, personIndex: i, read: 'personPan', optional: true });
-      out.push({ key: `person:${x.id}:aadhaar`, label: `Aadhaar – ${nm}`, short: 'Aadhaar', kind: 'doc', who: x.id, personIndex: i, read: 'aadhaar', optional: true });
+      out.push({ key: `person:${x.id}:aadhaar`, label: `Aadhaar (front, or e-Aadhaar PDF) – ${nm}`, short: 'Aadhaar front / e-Aadhaar', kind: 'doc', who: x.id, personIndex: i, read: 'aadhaar', optional: true });
+      out.push({ key: `person:${x.id}:aadhaarBack`, label: `Aadhaar back (address) – ${nm}`, short: 'Aadhaar back (address)', kind: 'doc', who: x.id, personIndex: i, read: 'aadhaar', optional: true });
     });
     return out;
   }
@@ -88,7 +89,10 @@
   function fixPans(text) {
     const L2D = { O: '0', D: '0', Q: '0', I: '1', L: '1', Z: '2', S: '5', B: '8', G: '6' }, D2L = { 0: 'O', 1: 'I', 2: 'Z', 5: 'S', 8: 'B', 6: 'G' };
     const out = [];
-    for (const m of String(text).toUpperCase().matchAll(/\b[A-Z0-9]{10}\b/g)) {
+    const up = String(text).toUpperCase();
+    const toks = Array.from(up.matchAll(/\b[A-Z0-9]{10}\b/g)).map(m => m[0]);
+    for (const line of up.split('\n')) { const j = line.replace(/\s+/g, ''); for (let i = 0; i + 10 <= j.length; i++) toks.push(j.slice(i, i + 10)); }
+    for (const m of toks.map(t => [t])) {
       const t = m[0].split('');
       for (let i = 0; i < 5; i++) if (D2L[t[i]]) t[i] = D2L[t[i]];
       for (let i = 5; i < 9; i++) if (L2D[t[i]]) t[i] = L2D[t[i]];
@@ -122,8 +126,8 @@
   }
   function findDate(text, near) {
     const scope = near ? (() => { const i = text.search(near); return i >= 0 ? text.slice(i, i + 220) : text; })() : text;
-    let m = /\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})\b/.exec(scope);
-    if (m) return `${m[3]}-${pad(m[2])}-${pad(m[1])}`;
+    let m = /\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})\b/.exec(scope) || /\b(\d{1,2})\s?[/.\- ]\s?(\d{1,2})\s?[/.\- ]\s?((?:19|20)\d{2})\b/.exec(scope);
+    if (m && +m[1] >= 1 && +m[1] <= 31 && +m[2] >= 1 && +m[2] <= 12) return `${m[3]}-${pad(m[2])}-${pad(m[1])}`;
     m = /\b(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december),?\s+(\d{4})/i.exec(scope);
     if (m) return `${m[3]}-${pad(MONTHS.indexOf(m[2].toLowerCase()) + 1)}-${pad(m[1])}`;
     m = /\b([a-z-]+(?:[\s-][a-z]+)?)\s+day\s+of\s+(january|february|march|april|may|june|july|august|september|october|november|december)[,\s]+(two thousand[\w\s-]*?|\d{4})(?:\s+under|\.|,|\n)/i.exec(scope.replace(/\n/g, ' '));
@@ -164,8 +168,90 @@
     if (w.length === 2) return { first: w[0], middle: '', last: w[1] };
     return { first: w[0], middle: w.slice(1, -1).join(' '), last: w[w.length - 1] };
   };
+  // A person's name as printed on a PAN card: CAPITAL letters, real-looking words (OCR junk from Hindi text is mixed case)
+  const vowelOk = (w) => w.length < 3 || /[AEIOUY]/.test(w);
+  function capsName(line) {
+    const t = String(line || '').replace(/[|~_`'"’“”»«•*#]+/g, ' ').replace(/[.,:;]+$/, '').replace(/\s+/g, ' ').trim();
+    if (!/^[A-Z][A-Z .]{2,60}$/.test(t)) return '';
+    const words = t.split(' ').filter(Boolean);
+    if (!words.length || words.length > 5 || !words.some(w => w.replace(/\./g, '').length >= 3) || !words.every(vowelOk)) return '';
+    if (NOISE.test(t) || /\b(GOVT|DEPARTMENT|INCOME|TAX|NAME|FATHER|SIGNATURE|DATE|BIRTH)\b/.test(t)) return '';
+    return t;
+  }
+  // Name as printed on Aadhaar: "Anita Sharma" (mixed case allowed, but must look like real words)
+  function personName(line) {
+    const t = String(line || '').replace(/[|~_`"’“”»«•*#]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!/^[A-Za-z][A-Za-z .']{2,50}$/.test(t)) return '';
+    const words = t.split(' ').filter(Boolean);
+    if (words.length < 2 || words.length > 5 || NOISE.test(t)) return '';
+    if (!words.every(w => /^[A-Z][a-z.']+$|^[A-Z.]+$/.test(w))) return '';  // "Anita" or "ANITA", not "afte"
+    if (!words.every(w => vowelOk(w.toUpperCase()))) return '';
+    return t;
+  }
+  // OCR sometimes drops the commas: put them back after typical address words and around state / district names
+  function addCommas(t) {
+    let x = ' ' + t + ' ';
+    x = x.replace(/\b(floor|flr|road|rd|street|marg|lane|nagar|colony|park|heights|complex|apartments?|apts|society|chowk|layout|enclave|residency|tower|plaza|city|town)\b(?!\s*,)/gi, '$1,');
+    for (const st of G.STATES) x = x.replace(new RegExp('\\s(' + st.replace(/ /g, '\\s+') + ')\\b', 'i'), ', $1');
+    const dists = Object.values(root.GST_DISTRICTS || {}).flat().filter(d => d.length > 3).sort((a, b) => b.length - a.length);
+    for (const d of dists) { const rx = new RegExp('([^,])\\s(' + d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')(?=\\s*,)', 'i'); if (rx.test(x)) { x = x.replace(rx, '$1, $2'); break; } }
+    return x.replace(/,\s*,/g, ',').replace(/\s+/g, ' ').replace(/\s+,/g, ',').trim().replace(/,$/, '');
+  }
+
+  // Address block from Aadhaar / e-Aadhaar: from "Address" up to the PIN code
+  function aadhaarAddress(T) {
+    const lines = T.split('\n');
+    let start = lines.findIndex(l => /\baddress\b\s*[:.-]?/i.test(l));
+    let chunk;
+    if (start >= 0) {
+      const rest = [lines[start].replace(/^.*?\baddress\b\s*[:.-]?\s*/i, '')].concat(lines.slice(start + 1));
+      const out = [];
+      for (const l of rest) {
+        out.push(l);
+        if (/[1-9](?:\s?\d){5}(?!\d)/.test(l)) break;
+        if (G.STATES.some(st => new RegExp('\\b' + st.replace(/ /g, '\\s+') + '\\b', 'i').test(l))) break;
+        if (out.length > 8) break;
+      }
+      chunk = out.join(' ');
+    } else {
+      // no label: take the English lines just above the PIN
+      const pi = lines.findIndex(l => /[A-Za-z].*[1-9](?:\s?\d){5}\b/.test(l));
+      if (pi < 0) return null;
+      const out = [lines[pi]];
+      for (let i = pi - 1; i >= Math.max(0, pi - 4); i--) { if (/[a-z]{3}/.test(lines[i]) && /,/.test(lines[i])) out.unshift(lines[i]); else break; }
+      chunk = out.join(' ');
+    }
+    chunk = chunk.replace(/\s+/g, ' ').replace(/\s+,/g, ',').trim()
+      .replace(/(\d)[}\]|lI](?=\s?\d)/g, '$11').replace(/(\d\s?)[Oo](?=\d)/g, '$10')     // OCR: "4} 1001" → "41 1001"
+      .replace(/([A-Za-z]{4,})\.\s+(?=[A-Z])/g, '$1, ');                                // "Koregaon Park. Pune" → "Koregaon Park, Pune"
+    if ((chunk.match(/,/g) || []).length < 3) chunk = addCommas(chunk);
+    // e-Aadhaar style labels: VTC / PO / Sub District / District / State / PIN Code
+    const lab = (k) => { const m = new RegExp('(?<!Sub\\s)\\b' + k + '\\s*:\\s*([^,]+)', 'i').exec(chunk); return m ? m[1].trim() : ''; };
+    const vtc = lab('VTC'), po = lab('PO'), dist = lab('District'), st = lab('State');
+    let head = chunk.replace(/\b(VTC|PO|Sub District|District|State|PIN Code|Pincode|Mobile)\s*:.*$/i, '');
+    head = head.replace(/^\s*(?:[SDWC]\s*\/\s*O\s*[:.,]?|[A-Za-z]{1,3}\s*[:.,])\s*[A-Za-z .]+?,\s*/i, '');   // S/O, W/O: Name,  (or OCR junk like "Me,")
+    const W = '(?!(?:Flat|House|Plot|Door|Shop|Room|Block|Unit|Near|Opp)\\b)[A-Z][a-z]+';
+    head = head.replace(new RegExp('^\\s*[SDWCsdwc]\\s*\\/?\\s*[Oo]\\s+' + W + '(?:\\s+' + W + '){0,3}\\s+(?=(?:[Ff]lat|[Hh]ouse|H\\.?\\s*[Nn]o|[Pp]lot|[Dd]oor|[Ss]hop|[Rr]oom|#|\\d))'), '');
+    const { pin, state } = pinState(chunk);
+    const parts = addressParts(head.replace(/\s*-?\s*[1-9](?:\s?\d){5}\s*$/, ''));
+    // "..., Koregaon Park, Pune City, Pune, Maharashtra" → city Pune, district Pune
+    const tail = head.replace(/\s*-?\s*[1-9](?:\s?\d){5}\s*$/, '').split(/,\s*/).map(x => x.trim()).filter(Boolean)
+      .filter(x => !G.STATES.some(sx => sx.toLowerCase() === x.toLowerCase()) && !/^india$/i.test(x));
+    let city = parts.city, district = dist;
+    if (!dist && tail.length >= 2) {
+      const last = tail[tail.length - 1], prev = tail[tail.length - 2];
+      if (prev.toLowerCase().replace(/\s+(city|town)$/, '') === last.toLowerCase() || prev.toLowerCase().split(' ')[0] === last.toLowerCase()) {
+        district = last; city = last;
+        parts.locality = parts.locality.split(/,\s*/).filter(x => x.toLowerCase() !== prev.toLowerCase()).join(', ');
+      }
+    }
+    if (vtc) city = vtc.replace(/\s+(city|town)$/i, '');
+    if (po && !parts.locality) parts.locality = po;
+    return { ...parts, city, district, pin, state: st && G.STATES.find(x => x.toLowerCase() === st.toLowerCase()) || state };
+  }
+
   function pinState(text) {
-    const pins = Array.from(text.matchAll(/(?:^|[^\d])([1-9]\d{2}\s?\d{3})(?!\d)/g)).map(m => m[1].replace(/\s/, ''));
+    const pins = Array.from(String(text).matchAll(/(?:^|[^\d])([1-9](?:\s?\d){5})(?!\s?\d)/g)).map(m => m[1].replace(/\s/g, '')).filter(x => x.length === 6);
     const pin = pins.length ? pins[pins.length - 1] : '';
     const state = G.STATES.find(s => new RegExp(`\\b${s.replace(/ /g, '\\s+')}\\b`, 'i').test(text)) || '';
     return { pin, state };
@@ -176,14 +262,20 @@
     const isState = (x) => G.STATES.some(st => st.toLowerCase() === x.toLowerCase().replace(/\s*-\s*\d{6}$/, ''));
     const si = parts.findIndex(isState);
     if (si >= 0) parts = parts.slice(0, si);
-    const r = { building: '', floor: '', premises: '', road: '', locality: '', city: '' };
+    const r = { building: '', floor: '', premises: '', road: '', locality: '', city: '', landmark: '' };
     if (!parts.length) return r;
     r.city = parts.pop();
     const take = (rx) => { const i = parts.findIndex(x => rx.test(x)); return i >= 0 ? parts.splice(i, 1)[0] : ''; };
     r.floor = take(/\bfloor\b|\bflr\b/i).replace(/\s*floor\b/i, '').trim() || '';
-    r.premises = take(/complex|tower|building|bldg|apartment|apts?\b|heights|plaza|chambers|bhavan|bhawan|society|residency|arcade|mall|centre|center|house\b|niwas|sadan/i);
+    r.landmark = take(/^(near|opp\.?|opposite|behind|beside|next to)\b/i);
+    r.premises = take(/complex|tower|building|bldg|apartment|apts?\b|heights|plaza|chambers|bhavan|bhawan|society|residency|arcade|mall|centre|center|house\b(?!\s*(?:no|number|#))|niwas|sadan/i);
     r.road = take(/\broad\b|\brd\b|marg\b|street|\bst\b|lane|path\b|highway|chowk/i);
-    r.building = parts.length ? parts.shift() : '';
+    const num = /^((?:no\.?\s*)?\d+[A-Za-z]?(?:[\/-]\d+[A-Za-z]?)*)\s+(.+)$/i.exec(r.road);
+    if (num && !parts.some(x => /\d|flat|house|plot|shop|door|room|block/i.test(x))) { r.building = num[1]; r.road = num[2]; }
+    if (!r.building) {
+      const bi = parts.findIndex(x => /\d|flat|house|h\.?\s*no|plot|shop|door|room|block|unit/i.test(x));
+      r.building = bi >= 0 ? parts.splice(bi, 1)[0] : (parts.length > 1 ? parts.shift() : '');
+    }
     r.locality = parts.join(', ');
     return r;
   }
@@ -198,18 +290,30 @@
     const pb = pi !== undefined ? `persons.${pi}` : '';
 
     if (slot.read === 'personPan') {
-      add(`${pb}.pan`, 'PAN', pans.find(x => x[3] === 'P') || pans[0]);
-      let nm = valueAfter(L, /(?:^|[\s\/|])(?:name|नाम)(?=$|[\s:\/|])/i, /father|mother|पिता|माता/i);
-      let fn = valueAfter(L, /father'?s?\s*name|पिता\s*का\s*नाम|पिता/i);
-      if (!nm || !fn) { const cand = nameLines(L).map(x => x.toUpperCase()); if (!nm) nm = cand[0] || ''; if (!fn) fn = cand.find(x => x !== nm) || ''; }
+      const pan = pans.find(x => x[3] === 'P') || pans[0];
+      add(`${pb}.pan`, 'PAN', pan);
+      // Names on PAN cards are printed in capitals: the first is the card holder, the next is the father.
+      // Holder's name is always printed before the father's name, so position decides; labels are only a fallback.
+      const caps = L.map(capsName).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i);
+      let nm = caps[0] || '', fn = caps[1] || '';
+      if (!nm || !fn) {
+        const ln = capsName(valueAfter(L, /(?:^|[\s\/|])(?:name|नाम)(?=$|[\s:\/|])/i, /'s\s*name|s\s+name|fat|mother|पिता|माता/i));
+        const lf = capsName(valueAfter(L, /f\w{0,3}t\w{0,2}r'?s?\s*n\w{1,3}e|पिता/i));
+        if (!nm) nm = ln; if (!fn) fn = lf && lf !== nm ? lf : '';
+      }
       if (nm) { const s = splitName(nm); add(`${pb}.firstName`, 'First name', s.first); add(`${pb}.middleName`, 'Middle name', s.middle); add(`${pb}.lastName`, 'Last name', s.last); }
       if (fn) { const s = splitName(fn); add(`${pb}.fatherFirst`, "Father's first name", s.first); add(`${pb}.fatherMiddle`, "Father's middle name", s.middle); add(`${pb}.fatherLast`, "Father's last name", s.last); }
       add(`${pb}.dob`, 'Date of birth', findDate(T, /date of birth|जन्म/i) || findDate(T));
+      // Proprietorship: the proprietor's PAN is the business PAN, and the legal name is the name on it
+      if (p.constitution === 'proprietorship' && (pi === 0 || pi === undefined)) {
+        add('partA.pan', 'PAN of business', pan);
+        add('partA.legalName', 'Legal name of business (as per PAN)', nm);
+      }
     }
     if (slot.read === 'entityPan') {
       const want = G.CONSTITUTIONS[p.constitution].panChar;
       add('partA.pan', 'PAN of business', pans.find(x => x[3] === want) || pans[0]);
-      add('partA.legalName', 'Legal name (as per PAN)', valueAfter(L, /^(name|नाम)\b/i, /father/i));
+      add('partA.legalName', 'Legal name (as per PAN)', valueAfter(L, /(?:^|[\s\/|])(?:name|नाम)(?=$|[\s:\/|])/i, /father/i) || (L.map(capsName).filter(Boolean)[0] || ''));
       add('business.regDate', 'Date of incorporation / formation', findDate(T, /incorporation|formation|date/i), false);
     }
     if (slot.read === 'coi') {
@@ -239,22 +343,20 @@
     if (slot.read === 'aadhaar') {
       const num = (T.match(/\b[2-9]\d{3}\s?\d{4}\s?\d{4}\b/) || [])[0];
       const dobLine = L.findIndex(x => /dob|date of birth|year of birth|जन्म/i.test(x));
-      const nmA = (dobLine > 0 ? nameLines(L.slice(Math.max(0, dobLine - 3), dobLine)).pop() : '') || nameLines(L)[0] || '';
+      const nmA = (dobLine > 0 ? L.slice(Math.max(0, dobLine - 3), dobLine).map(personName).filter(Boolean).pop() : '') || L.map(personName).filter(Boolean)[0] || '';
       if (nmA) { const s = splitName(nmA.toUpperCase()); add(`${pb}.firstName`, 'First name', s.first); add(`${pb}.middleName`, 'Middle name', s.middle); add(`${pb}.lastName`, 'Last name', s.last); }
       add(`${pb}.aadhaar`, 'Aadhaar number', num && num.replace(/\s/g, ''));
       add(`${pb}.dob`, 'Date of birth', findDate(T, /dob|date of birth|जन्म/i));
       const g = /\b(female|male|transgender)\b/i.exec(T);
       if (g) add(`${pb}.gender`, 'Gender', g[1].toLowerCase() === 'female' ? 'Female' : g[1].toLowerCase() === 'male' ? 'Male' : 'Others');
-      const rel = /\b[SD]\/O[:\s]+([A-Za-z .]+?)(?:,|\n)/.exec(T);
-      if (rel) { const s = splitName(rel[1].toUpperCase()); add(`${pb}.fatherFirst`, "Father's first name", s.first, false); add(`${pb}.fatherLast`, "Father's last name", s.last, false); }
-      const addr = /address[:\s]+([\s\S]{10,220}?\d{6})/i.exec(T);
-      if (addr) {
-        const one = addr[1].replace(/\n/g, ', ').replace(/\b[SDWC]\/O[:\s]+[A-Za-z .]+,?\s*/i, '');
-        const { pin, state } = pinState(one);
-        const a = addressParts(one.replace(/\s*-\s*\d{6}$/, ''));
-        add(`${pb}.address.pin`, 'PIN code', pin); add(`${pb}.address.state`, 'State', state); add(`${pb}.address.city`, 'City', a.city);
-        add(`${pb}.address.building`, 'Building / flat no.', a.building); add(`${pb}.address.premises`, 'Name of premises', a.premises); add(`${pb}.address.floor`, 'Floor', a.floor);
-        add(`${pb}.address.road`, 'Road / street', a.road); add(`${pb}.address.locality`, 'Locality', a.locality);
+      const rel = /\b[SD]\s*\/\s*O\s*[:\s]\s*([A-Za-z .]+?)(?:,|\n)/.exec(T);
+      if (rel) { const s = splitName(rel[1].trim().toUpperCase()); add(`${pb}.fatherFirst`, "Father's first name", s.first); add(`${pb}.fatherMiddle`, "Father's middle name", s.middle); add(`${pb}.fatherLast`, "Father's last name", s.last); }
+      const a = aadhaarAddress(T);
+      if (a && (a.pin || a.city)) {
+        const b = `${pb}.address`;
+        add(`${b}.building`, 'Building / flat no.', a.building); add(`${b}.floor`, 'Floor', a.floor); add(`${b}.premises`, 'Name of premises', a.premises);
+        add(`${b}.road`, 'Road / street', a.road); add(`${b}.locality`, 'Locality', a.locality); add(`${b}.city`, 'City / town', a.city);
+        add(`${b}.district`, 'District', a.district); add(`${b}.state`, 'State', a.state); add(`${b}.pin`, 'PIN code', a.pin); add(`${b}.landmark`, 'Nearby landmark', a.landmark);
       }
     }
     if (slot.read === 'rent') {
@@ -286,6 +388,33 @@
     const get = (path) => path.split('.').reduce((o, k) => (o == null ? o : o[k]), p);
     out.forEach(s => { const cur = get(s.path); s.current = cur || ''; if (cur && String(cur) !== s.value) s.checked = false; if (cur && String(cur) === s.value) s.same = true; });
     return out.filter(s => !s.same);
+  }
+
+  // Several OCR passes of the same photo → for each field keep the value most passes agree on
+  function mergeSuggestions(lists) {
+    // Fields that belong together come from one pass (the pass that found most of them); single fields go by majority.
+    const groupOf = (path) => /\.address\.|^ppob\.address\./.test(path) ? path.replace(/\.[^.]+$/, '') :
+      /\.(firstName|middleName|lastName)$/.test(path) || /partA\.legalName$/.test(path) ? path.replace(/\.[^.]+$/, '').replace(/^partA$/, 'persons.0') + '#name' :
+      /\.(fatherFirst|fatherMiddle|fatherLast)$/.test(path) ? path.replace(/\.[^.]+$/, '') + '#father' : '';
+    const out = new Map();
+    const groups = new Map();
+    lists.forEach((list, li) => list.forEach(s => { const g = groupOf(s.path); if (g) { if (!groups.has(g)) groups.set(g, lists.map(() => [])); groups.get(g)[li].push(s); } }));
+    for (const [, perPass] of groups) {
+      const sig = (arr) => arr.map(x => x.path + '=' + x.value).sort().join('|');
+      const counts = new Map(); perPass.forEach(a => { const k = sig(a); counts.set(k, (counts.get(k) || 0) + 1); });
+      const score = (a) => a.length + (a.some(x => /\.pin$/.test(x.path) && /^[1-9]\d{5}$/.test(x.value)) ? 6 : 0) + (a.some(x => /\.state$/.test(x.path)) ? 2 : 0);
+      const best = perPass.map((a, i) => ({ a, i })).filter(x => x.a.length).sort((x, y) => score(y.a) - score(x.a) || counts.get(sig(y.a)) - counts.get(sig(x.a)) || x.i - y.i)[0];
+      if (best) best.a.forEach(s => out.set(s.path, s));
+    }
+    const votes = new Map();
+    lists.forEach((list, li) => list.forEach(s => {
+      if (groupOf(s.path)) return;
+      const e = votes.get(s.path) || new Map();
+      const c = e.get(s.value) || { n: 0, li, s }; c.n++; e.set(s.value, c); votes.set(s.path, e);
+    }));
+    for (const [path, e] of votes) out.set(path, Array.from(e.values()).sort((a, b) => b.n - a.n || a.li - b.li)[0].s);
+    const order = (lists.slice().sort((a, b) => b.length - a.length)[0] || []).map(x => x.path);
+    return Array.from(out.values()).sort((a, b) => (order.indexOf(a.path) + 1 || 999) - (order.indexOf(b.path) + 1 || 999));
   }
 
   /* ---------- reader for photos, scans and locked PDFs (runs on the GST Desk site in this browser) ---------- */
@@ -332,29 +461,29 @@
   async function readDetails(blob, slot, p, opts = {}) {
     if (!slot.read) return { suggestions: [], note: '' };
     const isPdf = blob.type === 'application/pdf';
-    let text = '', note = '';
+    let text = '', note = '', texts = null;
     try {
       if (isPdf) {
         const r = await root.PDFText.extract(await blob.arrayBuffer());
         if (r.encrypted) {
           let pw = opts.askPassword ? await opts.askPassword() : null;
           while (pw) {
-            try { text = (await remoteRead(blob, pw, opts.onProgress)).text; break; }
+            try { const rr = await remoteRead(blob, pw, opts.onProgress); text = rr.text; texts = rr.texts || null; break; }
             catch (e) { if (e.code === 'wrong-password' && opts.askPassword) { pw = await opts.askPassword(true); continue; } throw e; }
           }
           if (!pw) return { suggestions: [], note: 'Password not entered – the file is saved; details were not read.' };
         } else if (r.text && r.text.replace(/\s/g, '').length > 30) text = r.text;
-        else { if (opts.onProgress) opts.onProgress('This is a scanned PDF – reading its text…'); text = (await remoteRead(blob, '', opts.onProgress)).text; }
+        else { if (opts.onProgress) opts.onProgress('This is a scanned PDF – reading its text…'); const rr = await remoteRead(blob, '', opts.onProgress); text = rr.text; texts = rr.texts || null; }
       } else {
         if (opts.onProgress) opts.onProgress('Reading text from the image…');
-        text = (await remoteRead(blob, '', opts.onProgress)).text;
+        const rr = await remoteRead(blob, '', opts.onProgress); text = rr.text; texts = rr.texts || null;
       }
     } catch (e) {
       if (e.message === 'offline') return { suggestions: [], note: 'To read photos, scans or locked PDFs, GST Desk needs the internet once (it loads the reader from the GST Desk website). The file is saved.' };
       return { suggestions: [], note: 'Could not read this document (' + e.message + '). The file is saved.' };
     }
     if (!text || text.replace(/\s/g, '').length < 15) return { suggestions: [], note: 'No readable text found in this document. The file is saved.' };
-    const sug = suggest(text, slot, p);
+    const sug = texts && texts.length > 1 ? mergeSuggestions(texts.map(t => suggest(t, slot, p))) : suggest(text, slot, p);
     return { suggestions: sug, note: sug.length ? '' : 'No new details found in this document.', text };
   }
 
@@ -375,5 +504,5 @@
     return '';
   }
 
-  root.GSTDocs = { ADDRESS_TYPES, LIMIT, slots, Store, prepare, readAsDataURL, dataURLtoBlob, toFile, readDetails, suggest, slotForUpload, findDate, fixPans };
+  root.GSTDocs = { ADDRESS_TYPES, LIMIT, slots, Store, prepare, readAsDataURL, dataURLtoBlob, toFile, readDetails, suggest, slotForUpload, findDate, fixPans, mergeSuggestions };
 })(typeof window !== 'undefined' ? window : globalThis);

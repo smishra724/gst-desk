@@ -1,6 +1,6 @@
 {
-  "version": "2.5.0",
+  "version": "2.6.0",
   "zip": "gst-desk.zip",
-  "notes": "File registration autopilot (Part A to Verification), district and jurisdiction dropdowns from the GST portal, HSN/SAC descriptions, father\u2019s name from PAN fixed.",
+  "notes": "Better reading of PAN and Aadhaar photos (PAN number, father\u2019s name, Aadhaar address), proprietor PAN fills Part A, district dropdowns always available.",
   "storeUrl": ""
 }

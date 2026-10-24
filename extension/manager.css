@@ -266,7 +266,7 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 12.5px; }
 .doc-btns button { padding: 4px 9px; font-size: 12px; background: var(--panel); }
 .doc-status { color: var(--accent); flex-basis: 100%; }
 .doc-status:empty { display: none; }
-.doc-trio .trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.doc-trio .trio { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .doc-check { margin: 0 0 14px; }
 .flash input, .flash select, .flash .seg { animation: flashIn 3.5s ease-out; }
 @keyframes flashIn { 0%, 60% { background: #d9f2df; box-shadow: 0 0 0 3px rgba(26,127,55,.25); } 100% { background: inherit; box-shadow: none; } }
