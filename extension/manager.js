@@ -932,6 +932,37 @@
   document.addEventListener('change', () => refreshValidation());
 
   $('#btn-new').addEventListener('click', createProfile);
+
+  /* ---------- the blue GST Desk icon: quick menu ---------- */
+  (function homeMenu() {
+    const btn = $('#btn-home'), menu = $('#home-menu');
+    if (!btn || !menu) return;
+    $('#home-ver').textContent = 'GST Desk v' + chrome.runtime.getManifest().version;
+    const close = () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); };
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = menu.hidden;
+      menu.hidden = !open; btn.setAttribute('aria-expanded', String(open));
+      const p = current();
+      menu.querySelector('[data-home="import-portal"]').hidden = !(p && p.status !== 'new');
+      if (open) menu.querySelector('button:not([hidden])').focus();
+    });
+    document.addEventListener('click', (e) => { if (!menu.hidden && !menu.contains(e.target)) close(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) { close(); btn.focus(); } });
+    menu.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-home]'); if (!b) return;
+      close();
+      const a = b.dataset.home;
+      if (a === 'new') { showView('clients'); createProfile(); }
+      else if (a === 'import-portal') { const p = current(); if (p) { showView('clients'); startImport(p); } }
+      else if (a === 'downloads' || a === 'work') showView(a);
+      else if (a === 'portal') chrome.tabs.create({ url: 'https://services.gst.gov.in/services/login' });
+      else if (a === 'cadesk') chrome.tabs.create({ url: 'https://smishra724.github.io/ca-desk/' });
+      else if (a === 'site') chrome.tabs.create({ url: 'https://smishra724.github.io/gst-desk/' });
+      else if (a === 'backup') $('#btn-export').click();
+      else if (a === 'update') $('#btn-update').click();
+    });
+  })();
   $('#search').addEventListener('input', renderList);
 
   /* ---------- backup ---------- */

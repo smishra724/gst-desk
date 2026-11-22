@@ -1,6 +1,6 @@
 {
-  "version": "2.8.2",
+  "version": "2.8.3",
   "zip": "gst-desk.zip",
-  "notes": "Download returns shows each client's name, GSTIN, state and GST ID with a search box; CA Desk buttons open GST Desk reliably.",
+  "notes": "The blue GST Desk icon opens a quick menu: new client, import from GST portal, downloads, Tally work, GST portal, CA Desk, backup, updates.",
   "storeUrl": ""
 }

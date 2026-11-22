@@ -9,7 +9,21 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <img src="icons/icon48.png" alt="" width="28" height="28">
+      <button type="button" id="btn-home" class="home-btn" aria-haspopup="menu" aria-expanded="false" title="GST Desk menu"><img src="icons/icon48.png" alt="GST Desk menu" width="28" height="28"></button>
+      <div id="home-menu" class="home-menu" role="menu" hidden>
+        <button role="menuitem" data-home="new">＋ New client</button>
+        <button role="menuitem" data-home="import-portal">⬇ Import this client from GST portal</button>
+        <button role="menuitem" data-home="downloads">Download returns</button>
+        <button role="menuitem" data-home="work">Tally &amp; GST work</button>
+        <hr>
+        <button role="menuitem" data-home="portal">GST portal login ↗</button>
+        <button role="menuitem" data-home="cadesk">Open CA Desk ↗</button>
+        <button role="menuitem" data-home="site">GST Desk website ↗</button>
+        <hr>
+        <button role="menuitem" data-home="backup">Back up all clients (file)</button>
+        <button role="menuitem" data-home="update">Check for updates</button>
+        <div class="home-ver" id="home-ver"></div>
+      </div>
       <div>
         <h1>GST Desk</h1>
         <p>Registration · Returns download · Tally &amp; reconciliation — all data stays in this browser.</p>
