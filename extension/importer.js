@@ -12,6 +12,7 @@
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const n = (s) => String(s || '').replace(/\s+/g, ' ').trim();
   const esc = (s) => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const alive = () => { try { return !!(chrome.runtime && chrome.runtime.id); } catch (_) { return false; } };   // false once GST Desk is reloaded/updated
   const send = (msg) => new Promise(res => { try { chrome.runtime.sendMessage(msg, r => { void chrome.runtime.lastError; res(r || {}); }); } catch (_) { res({}); } });
   const load = async () => (await chrome.storage.local.get(KEY))[KEY] || null;
   const mutate = async (fn) => { const r = await load(); if (!r) return null; fn(r); await chrome.storage.local.set({ [KEY]: r }); return r; };
@@ -418,10 +419,10 @@
   async function tick() {
     if (busy) return;
     busy = true;
-    try { await step(); } catch (e) { banner(await load(), { err: 'Paused: ' + e.message }); }
+    try { await step(); } catch (e) { try { if (alive()) banner(await load(), { err: 'Paused: ' + e.message }); } catch (_) { /* GST Desk was reloaded */ } }
     busy = false;
   }
   chrome.storage.onChanged.addListener((ch, area) => { if (area === 'local' && ch[KEY]) tick(); });
-  setInterval(() => { if (!document.hidden) tick(); }, 2000);
+  const iv = setInterval(() => { if (!alive()) { clearInterval(iv); host.remove(); return; } if (!document.hidden) tick(); }, 2000);
   setTimeout(tick, 600);
 })();

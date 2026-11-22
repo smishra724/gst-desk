@@ -14,7 +14,9 @@
   const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
   const lower = (s) => norm(s).toLowerCase();
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const send = (msg) => new Promise(res => { try { chrome.runtime.sendMessage(msg, (r) => res(r || {})); } catch (_) { res({}); } });
+  const send = (msg) => new Promise(res => { try { chrome.runtime.sendMessage(msg, (r) => { void chrome.runtime.lastError; res(r || {}); }); } catch (_) { res({}); } });
+  const alive = () => { try { return !!(chrome.runtime && chrome.runtime.id); } catch (_) { return false; } };   // false once GST Desk is reloaded/updated
+
 
   /* ---------- recipes: how to get each file (button texts are regexes, case-insensitive) ---------- */
   const TILE = { GSTR1: /\bgstr[\s-]*1\b(?![\s-]*a\b)/i, GSTR3B: /gstr[\s-]*3b/i, GSTR2B: /gstr[\s-]*2b/i };
@@ -422,8 +424,11 @@
     const q = await loadQueue();
     if (q && q.status !== 'stopped' && !q.dismissed) { banner(q); setTimeout(tick, 1500); }
     let t = null;
-    new MutationObserver(() => { clearTimeout(t); t = setTimeout(() => { if (!busy) loadQueue().then(q2 => { if (q2 && q2.status === 'running') tick(); }); }, 1500); })
-      .observe(document.documentElement, { childList: true, subtree: true });
+    const mo = new MutationObserver(() => {
+      if (!alive()) { mo.disconnect(); return; }
+      clearTimeout(t); t = setTimeout(() => { if (!busy && alive()) loadQueue().then(q2 => { if (q2 && q2.status === 'running') tick(); }).catch(() => {}); }, 1500);
+    });
+    mo.observe(document.documentElement, { childList: true, subtree: true });
   })();
 
   window.__gstfRunner = { RECIPES, tileFor, pickPeriod, findTarget, tick };

@@ -42,12 +42,13 @@
         const r = await new Promise(res => chrome.runtime.sendMessage({ type: 'import-clients', clients: e.data.clients || [], replacePasswords: !!e.data.replacePasswords }, x => { void chrome.runtime.lastError; res(x || { error: 'GST Desk did not answer' }); }));
         post({ id, ok: !r.error, data: r, error: r.error });
       }
-      else if (action === 'reload') { post({ id, ok: true }); setTimeout(() => chrome.runtime.sendMessage({ type: 'reload-self' }), 150); }
+      else if (action === 'reload') { post({ id, ok: true }); setTimeout(() => chrome.runtime.sendMessage({ type: 'reload-self' }, () => void chrome.runtime.lastError), 150); }
       else post({ id, ok: false, error: 'unknown action' });
     } catch (err) { post({ id, ok: false, error: err.message }); }
   });
   // Live updates while the dashboard is open
   chrome.storage.onChanged.addListener((ch, area) => {
+    if (!chrome.runtime || !chrome.runtime.id) return;
     if (area === 'local' && (ch[K.profiles] || ch[K.queue] || ch[K.downloads])) post({ event: 'changed' });
   });
   document.documentElement.setAttribute('data-gstdesk-extension', chrome.runtime.getManifest().version);

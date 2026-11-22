@@ -14,7 +14,9 @@
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const send = (msg) => new Promise(res => { try { chrome.runtime.sendMessage(msg, (r) => res(r || {})); } catch (_) { res({}); } });
+  const send = (msg) => new Promise(res => { try { chrome.runtime.sendMessage(msg, (r) => { void chrome.runtime.lastError; res(r || {}); }); } catch (_) { res({}); } });
+  const alive = () => { try { return !!(chrome.runtime && chrome.runtime.id); } catch (_) { return false; } };   // false once GST Desk is reloaded/updated
+
   const api = () => window.__gstfApi;
   const waitApi = async () => { for (let i = 0; i < 40 && !api(); i++) await sleep(150); return api(); };
 
@@ -453,9 +455,10 @@
     });
     const run = await loadRun();
     if (run && run.status !== 'stopped') { banner(run); setTimeout(tick, 1200); }
-    setInterval(() => { loadRun().then(r => { if (r && r.status === 'running' && !busy && !teaching) tick(); }); }, 2000);
+    const i1 = setInterval(() => { if (!alive()) { clearInterval(i1); return; } loadRun().then(r => { if (r && r.status === 'running' && !busy && !teaching) tick(); }).catch(() => {}); }, 2000);
     // Passive learning while you work on the portal yourself
-    setInterval(async () => {
+    const i2 = setInterval(async () => {
+      if (!alive()) { clearInterval(i2); return; }
       if (!api()) return;
       const ctx = api().detectCtx();
       if (ctx === 'partA') learnDistrictsHere();

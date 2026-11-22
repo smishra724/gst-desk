@@ -588,7 +588,7 @@
     const $ = (id) => shadow.getElementById(id);
     const on = (id, ev, fn) => { const e = $(id); if (e) e.addEventListener(ev, fn); };
     on('min', 'click', () => { saveSettings({ minimized: true }); render(); });
-    const openMgr = () => chrome.runtime.sendMessage({ type: 'open-manager' });
+    const openMgr = () => { try { chrome.runtime.sendMessage({ type: 'open-manager' }, () => void chrome.runtime.lastError); } catch (_) { /* reloaded */ } };
     on('manage', 'click', openMgr);
     on('manage2', 'click', openMgr);
     on('client', 'change', (e) => { saveSettings({ panelProfile: e.target.value }); ui.personIdx = null; ui.lastResult = null; render(); });
@@ -671,7 +671,9 @@
   let lastAutoCtx = '';
   let lastShownCtx = '';
   let moTimer = null;
+  const alive = () => { try { return !!(chrome.runtime && chrome.runtime.id); } catch (_) { return false; } };
   const mo = new MutationObserver(() => {
+    if (!alive()) { mo.disconnect(); return; }
     if (filling) return;
     clearTimeout(moTimer);
     moTimer = setTimeout(() => {
@@ -709,7 +711,7 @@
     const watch = () => { if (!watch.on && regForm()) { watch.on = true; mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] }); } };
     watch();
     window.addEventListener('hashchange', watch);
-    const wi = setInterval(() => { if (watch.on) clearInterval(wi); else watch(); }, 5000);
+    const wi = setInterval(() => { if (watch.on || !alive()) clearInterval(wi); else watch(); }, 5000);
   })();
 
   // Exposed for the extension's own test page only.
