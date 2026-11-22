@@ -22,8 +22,12 @@
   })();
 
   const client = () => App.profiles.find(p => p.id === st.clientId) || null;
+  // Company names compared loosely: "Travel-O-Media Solutions Pvt Ltd" = "TRAVEL O MEDIA SOLUTIONS PRIVATE LIMITED"
+  const norm = (s) => String(s || '').toUpperCase().replace(/\bPRIVATE\b/g, 'PVT').replace(/\bLIMITED\b/g, 'LTD').replace(/\(.*?\)/g, '').replace(/[^A-Z0-9]/g, '').replace(/^M\/?S/, '');
+  const namesOf = (p) => [p.tally.company, p.nickname, p.partA.legalName, p.business.tradeName].filter(Boolean).map(norm);
+  const clientFor = (company) => App.profiles.find(p => p.tally.company === company) || App.profiles.find(p => namesOf(p).includes(norm(company))) || null;
   const monthEnd = (ym) => { const [y, m] = ym.split('-').map(Number); return `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`; };
-  const fileBase = () => `${(G.displayName(client() || {}) || 'client').replace(/[\\/:*?"<>|]+/g, ' ').trim()}_${st.from}${st.to !== st.from ? '_to_' + st.to : ''}`;
+  const fileBase = () => `${(client() ? G.displayName(client()) : st.company || 'client').replace(/[\\/:*?"<>|]+/g, ' ').trim()}_${st.from}${st.to !== st.from ? '_to_' + st.to : ''}`;
 
   async function loadSettings() {
     const s = (await chrome.storage.local.get(SETTINGS))[SETTINGS] || {};
@@ -40,6 +44,20 @@
     return L.reduce((a, d) => { a.n++; a.txval += d.txval; a.tax += d.igst + d.cgst + d.sgst + d.cess; return a; }, { n: 0, txval: 0, tax: 0 });
   }
 
+  function clientOptions() {
+    const open = st.companies.map(n => ({ n, p: clientFor(n) }));
+    const openIds = new Set(open.filter(x => x.p).map(x => x.p.id));
+    const opt = (v, label, sel) => `<option value="${esc(v)}"${sel ? ' selected' : ''}>${esc(label)}</option>`;
+    const cl = (p) => opt(p.id, G.displayName(p) + (p.gstin ? ' · ' + p.gstin : ''), p.id === st.clientId);
+    const inTally = open.map(x => x.p ? opt(x.p.id, `${G.displayName(x.p)}${x.p.gstin ? ' · ' + x.p.gstin : ''}`, x.p.id === st.clientId)
+      : opt('tally:' + x.n, `${x.n} (not a client yet)`, !st.clientId && st.company === x.n)).join('');
+    const rest = App.profiles.filter(p => !openIds.has(p.id)).map(cl).join('');
+    return (!st.clientId && !st.company ? '<option value="" selected>— Choose a client or a company open in Tally —</option>' : '') +
+      (inTally ? `<optgroup label="Open in Tally now">${inTally}</optgroup>` : '') +
+      (rest ? `<optgroup label="${inTally ? 'Other GST Desk clients' : 'GST Desk clients'}">${rest}</optgroup>` : '') +
+      (!inTally && !rest ? '<option value="" disabled>No clients yet – click “List open companies”</option>' : '');
+  }
+
   function render() {
     const root = $('#work');
     const c = client();
@@ -51,7 +69,7 @@
 
       <section class="card"><header><h3>1 · Read from Tally</h3><span class="hint">TallyPrime must be open with the company loaded</span></header><div class="body">
         <div class="grid">
-          <div class="f s4"><label for="w-client">Client</label><select id="w-client">${App.profiles.map(p => `<option value="${p.id}"${p.id === st.clientId ? ' selected' : ''}>${esc(G.displayName(p))}${p.gstin ? ' · ' + esc(p.gstin) : ''}</option>`).join('')}</select></div>
+          <div class="f s4"><label for="w-client">Client / Tally company</label><select id="w-client">${clientOptions()}</select></div>
           <div class="f s4"><label for="w-company">Company in Tally</label><input id="w-company" type="text" list="w-companies" value="${esc(st.company)}" placeholder="Exactly as in TallyPrime">
             <datalist id="w-companies">${st.companies.map(n => `<option value="${esc(n)}">`).join('')}</datalist></div>
           <div class="f s2"><label for="w-port">ODBC / server port</label><input id="w-port" type="text" inputmode="numeric" value="${esc(st.port)}"></div>
@@ -60,6 +78,7 @@
           <div class="f s3"><label for="w-to">To month</label><input id="w-to" type="month" value="${st.to}"></div>
           <div class="f s3"><span class="lbl">&nbsp;</span><button class="primary" id="w-fetch">Read from Tally</button></div>
         </div>
+        ${!c && st.company ? `<div class="note warn" style="margin-top:10px">“${esc(st.company)}” is open in Tally but is not a GST Desk client yet. <button class="link" id="w-addclient">Add it as a client</button> (then add its GSTIN – needed for GSTR-1 and place-of-supply). Reading from Tally works without it.</div>` : ''}
         ${c && !c.gstin ? '<div class="note warn" style="margin-top:10px">This client has no GSTIN saved – add it on the Clients tab (needed for GSTR-1 and place-of-supply).</div>' : ''}
         ${st.status ? `<div class="note" style="margin-top:10px">${esc(st.status)}</div>` : ''}
         ${st.error ? `<div class="note err" style="margin-top:10px">${esc(st.error)}<br><span class="small">In TallyPrime: F1 (Help) → Settings → Connectivity → Client/Server configuration → TallyPrime acts as <b>Both</b>, Enable ODBC <b>Yes</b>, Port <b>${esc(st.port)}</b>. Restart Tally after changing.</span></div>` : ''}
@@ -166,13 +185,31 @@
     render();
   }
 
-  async function listCompanies() {
-    st.error = ''; st.status = 'Asking Tally for open companies…'; render();
+  async function listCompanies(quiet) {
+    if (!quiet) { st.error = ''; st.status = 'Asking Tally for open companies…'; render(); }
     try {
       st.companies = await GSTTally.Tally(st.port).companies();
-      st.status = st.companies.length ? `Open in Tally: ${st.companies.join(', ')}` : 'Tally is reachable but no company is open.';
-      if (!st.company && st.companies.length === 1) st.company = st.companies[0];
-    } catch (e) { st.error = e.message; st.status = ''; }
+      st.status = st.companies.length ? `Open in Tally: ${st.companies.join(', ')} – pick one in “Client / Tally company”.` : 'Tally is reachable but no company is open.';
+      // link GST Desk clients to their Tally company by name
+      let linked = 0;
+      for (const n of st.companies) { const p = clientFor(n); if (p && !p.tally.company) { p.tally.company = n; linked++; } }
+      if (linked) App.saveProfiles();
+      const c = client();
+      if (c && !st.company) st.company = c.tally.company || '';
+      if (!c && !st.company && st.companies.length) {   // nothing chosen yet: take the first open company
+        const p = clientFor(st.companies[0]);
+        if (p) { st.clientId = p.id; st.company = p.tally.company; } else st.company = st.companies[0];
+      }
+    } catch (e) { if (!quiet) { st.error = e.message; st.status = ''; } }
+    render();
+  }
+  function addClientFromTally() {
+    const name = st.company; if (!name) return;
+    const p = G.newProfile(/\bLLP\b/i.test(name) ? 'llp' : /\bPUBLIC\b/i.test(name) ? 'public_company' : /\b(PVT|PRIVATE|LTD|LIMITED)\b/i.test(name) ? 'pvt_company' : 'proprietorship');
+    p.status = 'registered'; p.nickname = name; p.partA.legalName = name; p.tally.company = name;
+    App.profiles.push(p); App.saveProfiles();
+    st.clientId = p.id; saveSettings();
+    App.toast(`Added “${name}” as a client – add its GSTIN on the Clients tab`);
     render();
   }
 
@@ -222,7 +259,9 @@
   function wire() {
     const on = (sel, ev, fn) => { const e = $(sel); if (e) e.addEventListener(ev, fn); };
     on('#w-client', 'change', (e) => {
-      st.clientId = e.target.value; const c = client(); st.company = (c && c.tally.company) || '';
+      const v = e.target.value;
+      if (v.startsWith('tally:')) { st.clientId = ''; st.company = v.slice(6); }
+      else { st.clientId = v; const c = client(); st.company = (c && c.tally.company) || ''; }
       st.docs = null; st.twoB = null; st.twoBFiles = []; st.r1 = null; st.r1File = ''; st.status = ''; st.error = '';
       saveSettings(); render();
     });
@@ -231,7 +270,8 @@
     on('#w-from', 'change', (e) => { st.from = e.target.value; if (st.to < st.from) st.to = st.from; render(); });
     on('#w-to', 'change', (e) => { st.to = e.target.value; render(); });
     on('#w-tol', 'change', (e) => { st.tolerance = +e.target.value || 0; saveSettings(); });
-    on('#w-list', 'click', listCompanies);
+    on('#w-list', 'click', () => listCompanies(false));
+    on('#w-addclient', 'click', addClientFromTally);
     on('#w-fetch', 'click', fetchTally);
     on('#w-reg', 'click', () => XLSXW.save(`Registers_${fileBase()}.xlsx`, W.registers(st.docs)));
     on('#w-r1', 'click', () => {
@@ -268,5 +308,6 @@
     if (e.detail !== 'work') return;
     if (!ready) { await loadSettings(); ready = true; }
     render();
+    listCompanies(true);   // show the companies open in Tally right away (quietly, if Tally is closed)
   });
 })();

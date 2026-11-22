@@ -1,6 +1,6 @@
 {
-  "version": "2.8.0",
+  "version": "2.8.1",
   "zip": "gst-desk.zip",
-  "notes": "Works with CA Desk: set up and update GST Desk from CA Desk, receive CA Desk clients with their GST logins, open a client from CA Desk.",
+  "notes": "Tally & GST work: companies open in Tally now appear in the client dropdown, are matched to clients by name, and can be added as clients in one click.",
   "storeUrl": ""
 }
