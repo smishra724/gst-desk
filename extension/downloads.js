@@ -38,9 +38,18 @@
       <div class="cols3">
         <section class="card"><header><h3>1 · Clients</h3><span class="hint">${clients.length} with GSTIN</span></header><div class="body">
           ${clients.length ? `<label class="small" style="display:flex;gap:6px;margin-bottom:6px"><input type="checkbox" id="dl-all"${state.sel.size && state.sel.size === clients.length ? ' checked' : ''}> Select all</label>
-          <div class="pick">${clients.map(p => `<label><input type="checkbox" data-client="${p.id}"${state.sel.has(p.id) ? ' checked' : ''}> ${esc(G.displayName(p))}
-            <span class="sub">${p.portal.passwordEnc ? '' : '⚠ no password · '}${esc(p.gstin || 'no GSTIN')}</span></label>`).join('')}</div>`
-            : '<p class="muted">Add GSTIN and portal username to a client on the Clients tab first.</p>'}
+          ${clients.length > 6 ? `<input id="dl-q" type="search" placeholder="Search name, GSTIN or GST ID" value="${esc(state.q || '')}" style="margin-bottom:6px">` : ''}
+          <div class="pick">${clients.map(p => {
+            const legal = p.partA.legalName && p.partA.legalName !== G.displayName(p) ? p.partA.legalName : '';
+            const hay = [G.displayName(p), legal, p.business.tradeName, p.gstin, p.portal.username].join(' ').toLowerCase();
+            return `<label data-hay="${esc(hay)}" title="${esc([G.displayName(p), legal, p.gstin, p.portal.username && 'GST ID ' + p.portal.username].filter(Boolean).join('\n'))}"><input type="checkbox" data-client="${p.id}"${state.sel.has(p.id) ? ' checked' : ''}> <b>${esc(G.displayName(p))}</b>
+            ${legal ? `<span class="sub">${esc(legal)}</span>` : ''}
+            <span class="sub">${esc(p.gstin || 'no GSTIN')}${p.gstin ? ' · ' + esc(G.stateName(p.gstin.slice(0, 2))) : ''}${p.portal.username ? ' · GST ID ' + esc(p.portal.username) : ' · ⚠ no GST ID'}${p.portal.passwordEnc ? '' : ' · ⚠ no password'}</span></label>`;
+          }).join('')}</div>
+          <div class="small" id="dl-chosen" style="margin-top:8px"></div>`
+            : `<p class="muted">No clients with a GSTIN yet. Your clients appear here once they are in GST Desk:</p>
+              <div class="row" style="flex-wrap:wrap;gap:8px"><button class="primary" id="dl-fromca">Get my clients from CA Desk</button><button id="dl-new">＋ Add a client</button></div>
+              <p class="muted small" style="margin-top:8px">CA Desk → <b>GST Desk</b> (left menu) → <b>Select not in GST Desk</b> → <b>Send to GST Desk</b>. Each GSTIN comes with its GST ID and password. You can also use <b>Import</b> (top) for an Excel/JSON list.</p>`}
         </div></section>
         <section class="card"><header><h3>2 · Months</h3>
           <select id="dl-fy" aria-label="Financial year">${[0, 1, 2, 3, 4].map(i => { const y = currentFY() - i; return `<option value="${y}"${y === state.fy ? ' selected' : ''}>FY ${fyLabel(y)}</option>`; }).join('')}</select></header>
@@ -100,6 +109,8 @@
     if (el) el.textContent = n ? `${n} file${n > 1 ? 's' : ''} for ${state.sel.size} client${state.sel.size > 1 ? 's' : ''}` : 'Pick at least one client, month and file';
     const b = $('#dl-start');
     if (b) b.disabled = !n;
+    const ch = $('#dl-chosen');
+    if (ch) { const names = App.profiles.filter(p => state.sel.has(p.id)).map(p => `${G.displayName(p)}${p.gstin ? ' (' + p.gstin + ')' : ''}`); ch.innerHTML = names.length ? `<b>Selected:</b> ${esc(names.join(', '))}` : ''; }
   }
 
   function wire(clients) {
@@ -112,6 +123,9 @@
     $$('[data-month]').forEach(c => c.addEventListener('change', () => { c.checked ? state.months.add(+c.dataset.month) : state.months.delete(+c.dataset.month); count(); }));
     $$('[data-file]').forEach(c => c.addEventListener('change', () => { c.checked ? state.files.add(c.dataset.file) : state.files.delete(c.dataset.file); count(); }));
     on('#dl-start', 'click', start);
+    on('#dl-fromca', 'click', () => chrome.tabs.create({ url: 'https://smishra724.github.io/ca-desk/' }));
+    on('#dl-new', 'click', () => { location.hash = '#clients-new'; location.reload(); });
+    on('#dl-q', 'input', (e) => { state.q = e.target.value; const q = state.q.toLowerCase(); $$('.pick label[data-hay]').forEach(l => { l.style.display = !q || l.dataset.hay.includes(q) ? '' : 'none'; }); });
     $$('[data-q]').forEach(b => b.addEventListener('click', () => queueAction(b.dataset.q)));
   }
 

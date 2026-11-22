@@ -31,9 +31,13 @@
   window.addEventListener('message', async (e) => {
     if (e.source !== window || e.origin !== ORIGIN || !e.data || e.data.gstdesk !== 'page') return;
     const { id, action, hash } = e.data;
+    // After GST Desk is updated/reloaded this old copy can no longer reach the extension: say so instead of failing silently.
+    if (!chrome.runtime || !chrome.runtime.id) { post({ id, ok: false, stale: true, error: 'GST Desk was updated or reloaded. Reload this page (F5) once and try again.' }); return; }
     try {
       if (action === 'summary') post({ id, ok: true, data: await summary() });
-      else if (action === 'open') { chrome.runtime.sendMessage({ type: 'open-manager', hash: hash || '' }); post({ id, ok: true }); }
+      else if (action === 'open') {
+        chrome.runtime.sendMessage({ type: 'open-manager', hash: hash || '' }, (r) => { const err = chrome.runtime.lastError; post(err ? { id, ok: false, error: err.message } : { id, ok: true }); });
+      }
       else if (action === 'sync-clients') {
         const r = await new Promise(res => chrome.runtime.sendMessage({ type: 'import-clients', clients: e.data.clients || [], replacePasswords: !!e.data.replacePasswords }, x => { void chrome.runtime.lastError; res(x || { error: 'GST Desk did not answer' }); }));
         post({ id, ok: !r.error, data: r, error: r.error });
@@ -47,5 +51,6 @@
     if (area === 'local' && (ch[K.profiles] || ch[K.queue] || ch[K.downloads])) post({ event: 'changed' });
   });
   document.documentElement.setAttribute('data-gstdesk-extension', chrome.runtime.getManifest().version);
+  document.documentElement.setAttribute('data-gstdesk-id', chrome.runtime.id);   // lets the page open GST Desk with a plain link
   post({ event: 'ready' });
 })();

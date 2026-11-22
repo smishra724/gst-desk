@@ -1,6 +1,6 @@
 {
-  "version": "2.8.1",
+  "version": "2.8.2",
   "zip": "gst-desk.zip",
-  "notes": "Tally & GST work: companies open in Tally now appear in the client dropdown, are matched to clients by name, and can be added as clients in one click.",
+  "notes": "Download returns shows each client's name, GSTIN, state and GST ID with a search box; CA Desk buttons open GST Desk reliably.",
   "storeUrl": ""
 }

@@ -264,7 +264,7 @@
     await saveQueue(q);
     if (cred.error === 'locked') banner(q, { you: `Passwords are locked. Unlock them in GST Desk, or type the password for ${it.name} yourself, then the CAPTCHA, then LOGIN.`, err: '' });
     else if (!cred.password) banner(q, { you: `No saved password for ${it.name}. Type it once (GST Desk saves it for next time), then the CAPTCHA, then click LOGIN.`, err: '' });
-    else banner(q, { you: `Type the CAPTCHA for ${it.name} and click LOGIN.`, err: '' });
+    else banner(q, { you: `Logging in: ${it.name}${it.gstin ? ' · GSTIN ' + it.gstin : ''}. Type the CAPTCHA and click LOGIN.`, err: '' });
     if (cap) { cap.scrollIntoView({ block: 'center' }); cap.focus(); cap.style.outline = '3px solid #d97706'; }
   }
 
