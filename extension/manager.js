@@ -1063,8 +1063,10 @@
     if (area === 'local' && ch[K.profiles] && ch[K.profiles].newValue) {
       let hit = false;
       for (const np of ch[K.profiles].newValue) {
+        if (!profiles.some(x => x.id === np.id) && !(ch[K.profiles].oldValue || []).some(x => x.id === np.id)) { profiles.push(G.normalizeProfile(np)); continue; }   // e.g. sent from CA Desk
         const op = profiles.find(x => x.id === np.id);
         if (!op || !np.portal) continue;
+        if (np.caDesk && JSON.stringify(np.caDesk) !== JSON.stringify(op.caDesk)) { Object.assign(op, G.normalizeProfile(np)); if (op.id === currentId) hit = true; continue; }
         if (JSON.stringify(np.portal.passwordEnc) !== JSON.stringify(op.portal.passwordEnc) || (!op.portal.username && np.portal.username)) {
           op.portal.passwordEnc = np.portal.passwordEnc;
           if (!op.portal.username) op.portal.username = np.portal.username;
@@ -1125,6 +1127,7 @@
     const v = (location.hash || '').slice(1);
     showView(['downloads', 'work'].includes(v) ? v : 'clients');
     if (v === 'clients-new') createProfile();
+    if (v.startsWith('gstin=')) { const p = profiles.find(x => x.gstin === decodeURIComponent(v.slice(6)).toUpperCase()); if (p) { currentId = p.id; renderList(); renderEditor(); } }
     const pending = (await chrome.storage.local.get('gstf_import_result')).gstf_import_result;
     if (pending) applyImport(pending);
   })();

@@ -76,6 +76,13 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       if (changed) { p.updated = new Date().toISOString(); await chrome.storage.local.set({ [K.profiles]: list }); }
       return reply({ saved: changed });
     }
+    // Clients sent from CA Desk (one GST Desk client per GSTIN). Existing details are kept; blanks are filled.
+    if (msg.type === 'import-clients' || msg.type === 'reload-self') {
+      const from = sender && sender.url ? new URL(sender.url) : null;
+      if (!from || from.hostname !== 'smishra724.github.io') return reply({ error: 'not allowed' });
+      if (msg.type === 'reload-self') { reply({ ok: true }); setTimeout(() => chrome.runtime.reload(), 100); return; }
+      return reply(await importClients(msg.clients || [], !!msg.replacePasswords));
+    }
     if (msg.type === 'expect-download') {
       await chrome.storage.session.set({ [EXPECT]: { ...msg.info, at: Date.now() } });
       return reply({ ok: true });
@@ -131,3 +138,52 @@ chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
   })();
   return true;
 });
+
+/* ---------- clients from CA Desk ---------- */
+function constitutionKey(t) {
+  t = String(t || '').toLowerCase();
+  if (/llp|limited liability/.test(t)) return 'llp';
+  if (/public/.test(t)) return 'public_company';
+  if (/private|pvt|opc|one person|company/.test(t)) return 'pvt_company';
+  if (/partner/.test(t)) return 'partnership';
+  return 'proprietorship';
+}
+async function importClients(list, replacePasswords) {
+  const r = await chrome.storage.local.get(K.profiles);
+  const profiles = (r[K.profiles] || []).map(G.normalizeProfile);
+  if ((await self.GSTVault.state()) === 'none') await self.GSTVault.setupAuto();
+  const canEncrypt = (await self.GSTVault.state()) === 'unlocked';
+  const out = { added: 0, updated: 0, unchanged: 0, passwords: 0, locked: 0, skipped: 0, ids: {} };
+  for (const c of list) {
+    const gstin = String(c.gstin || '').toUpperCase().replace(/\s/g, '');
+    if (!/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(gstin)) { out.skipped++; continue; }
+    let p = profiles.find(x => x.gstin === gstin);
+    const isNew = !p;
+    if (isNew) { p = G.newProfile(constitutionKey(c.constitution)); p.gstin = gstin; p.status = 'registered'; profiles.push(p); }
+    const before = JSON.stringify(p);
+    const fill = (obj, k, v) => { if (v && !obj[k]) obj[k] = String(v); };
+    fill(p, 'nickname', c.name);
+    fill(p.partA, 'legalName', c.legalName);
+    fill(p.business, 'tradeName', c.tradeName);
+    fill(p.partA, 'pan', gstin.slice(2, 12));
+    if (!p.partA.state) p.partA.state = G.stateName(gstin.slice(0, 2)) || '';
+    fill(p.partA, 'email', c.email);
+    if (c.mobile && /^[6-9]\d{9}$/.test(String(c.mobile).replace(/\D/g, '').slice(-10))) fill(p.partA, 'mobile', String(c.mobile).replace(/\D/g, '').slice(-10));
+    fill(p.tally, 'company', c.tallyCompany);
+    p.caDesk = { cid: c.cid || '', at: new Date().toISOString() };
+    if (c.username && (!p.portal.username || replacePasswords)) p.portal.username = String(c.username).trim();
+    if (c.password && (!p.portal.passwordEnc || replacePasswords)) {
+      if (!canEncrypt) out.locked++;
+      else {
+        let cur = null; try { cur = await self.GSTVault.decrypt(p.portal.passwordEnc); } catch (_) { cur = null; }
+        if (cur !== c.password) { p.portal.passwordEnc = await self.GSTVault.encrypt(String(c.password)); out.passwords++; }
+      }
+    }
+    const changed = JSON.stringify({ ...p, caDesk: null }) !== JSON.stringify({ ...JSON.parse(before), caDesk: null });
+    if (isNew) out.added++; else if (changed) out.updated++; else out.unchanged++;
+    if (isNew || changed) p.updated = new Date().toISOString();
+    out.ids[gstin] = p.id;
+  }
+  await chrome.storage.local.set({ [K.profiles]: profiles });
+  return out;
+}

@@ -71,3 +71,8 @@ GOOD TO KNOW
   Purchases use "Supplier Invoice No." (Reference) for matching with 2B.
 - Rates come from the stock item GST details; for accounting invoices the effective
   rate is used and odd rates are flagged.
+
+
+WITH CA DESK
+- CA Desk → GST Desk page: set up / update GST Desk with one click, send clients
+  (GSTIN + GST login) to GST Desk, and open a client in GST Desk.

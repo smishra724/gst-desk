@@ -1,6 +1,6 @@
 {
-  "version": "2.7.2",
+  "version": "2.8.0",
   "zip": "gst-desk.zip",
-  "notes": "GST passwords save automatically (typed once in GST Desk or on the GST login page) and fill in on every download \u2013 no master password to type after a restart.",
+  "notes": "Works with CA Desk: set up and update GST Desk from CA Desk, receive CA Desk clients with their GST logins, open a client from CA Desk.",
   "storeUrl": ""
 }
