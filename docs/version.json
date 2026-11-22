@@ -1,6 +1,6 @@
 {
-  "version": "2.8.4",
+  "version": "2.8.5",
   "zip": "gst-desk.zip",
-  "notes": "No more 'Extension context invalidated' errors on open GST portal tabs after GST Desk is updated or reloaded.",
+  "notes": "Tally & GST work: link a Tally company to an existing client (best match suggested), or fetch it from CA Desk in one click.",
   "storeUrl": ""
 }

@@ -25,6 +25,11 @@
   // Company names compared loosely: "Travel-O-Media Solutions Pvt Ltd" = "TRAVEL O MEDIA SOLUTIONS PRIVATE LIMITED"
   const norm = (s) => String(s || '').toUpperCase().replace(/\bPRIVATE\b/g, 'PVT').replace(/\bLIMITED\b/g, 'LTD').replace(/\(.*?\)/g, '').replace(/[^A-Z0-9]/g, '').replace(/^M\/?S/, '');
   const namesOf = (p) => [p.tally.company, p.nickname, p.partA.legalName, p.business.tradeName].filter(Boolean).map(norm);
+  // Loose similarity for suggestions ("Azelock Laser" ~ "AZELOCK LASER PRIVATE LIMITED")
+  const STOP = new Set(['PVT', 'PRIVATE', 'LTD', 'LIMITED', 'LLP', 'CO', 'COMPANY', 'MS', 'THE', 'AND', 'OF', 'INDIA', 'OPC']);
+  const toks = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9 ]+/g, ' ').split(/\s+/).filter(t => t && !STOP.has(t));
+  const sim = (a, b) => { const x = toks(a), y = new Set(toks(b)); if (!x.length || !y.size) return 0; const hit = x.filter(t => y.has(t)).length; return hit / Math.max(x.length, y.size) + (x[0] && y.has(x[0]) ? 0.25 : 0); };
+  const score = (p, company) => Math.max(...[p.nickname, p.partA.legalName, p.business.tradeName].filter(Boolean).map(n => sim(company, n)), 0);
   const clientFor = (company) => App.profiles.find(p => p.tally.company === company) || App.profiles.find(p => namesOf(p).includes(norm(company))) || null;
   const monthEnd = (ym) => { const [y, m] = ym.split('-').map(Number); return `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`; };
   const fileBase = () => `${(client() ? G.displayName(client()) : st.company || 'client').replace(/[\\/:*?"<>|]+/g, ' ').trim()}_${st.from}${st.to !== st.from ? '_to_' + st.to : ''}`;
@@ -42,6 +47,27 @@
   function sums(kind) {
     const L = (st.docs || []).filter(d => !d.cancelled && d.kind === kind);
     return L.reduce((a, d) => { a.n++; a.txval += d.txval; a.tax += d.igst + d.cgst + d.sgst + d.cess; return a; }, { n: 0, txval: 0, tax: 0 });
+  }
+
+  // Tally company not linked to a client: link it to an existing client (best matches first), add it, or fetch it from CA Desk
+  function linkBox() {
+    const linkable = App.profiles.filter(p => !p.tally.company || !st.companies.includes(p.tally.company) || p.tally.company === st.company)
+      .map(p => ({ p, s: score(p, st.company) })).sort((a, b) => b.s - a.s || G.displayName(a.p).localeCompare(G.displayName(b.p)));
+    const best = linkable[0] && linkable[0].s >= 0.5 ? linkable[0].p : null;
+    return `<div class="note warn" style="margin-top:10px">
+      <div><b>“${esc(st.company)}”</b> is open in Tally but not linked to a GST Desk client.${best ? ` It looks like <b>${esc(G.displayName(best))}</b>.` : ''}</div>
+      ${linkable.length ? `<div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
+        <select id="w-linkto" style="max-width:420px">${linkable.map(({ p, s }) => `<option value="${p.id}"${p === best ? ' selected' : ''}>${esc(G.displayName(p))}${p.gstin ? ' · ' + esc(p.gstin) : ''}${s >= 0.5 ? ' (suggested)' : ''}</option>`).join('')}${best ? '' : '<option value="" selected>— Choose the client —</option>'}</select>
+        <button class="primary" id="w-link">Link to this client</button></div>` : ''}
+      <div class="small" style="margin-top:8px">Not in the list? <button class="link" id="w-fromca">Get it from CA Desk</button> (sends it with its GSTIN and GST login) · <button class="link" id="w-addclient">Add as a new client</button>. Reading from Tally works without linking.</div>
+    </div>`;
+  }
+  function linkTo(id) {
+    const p = App.profiles.find(x => x.id === id); if (!p) return;
+    p.tally.company = st.company; App.saveProfiles();
+    st.clientId = p.id; saveSettings();
+    App.toast(`Linked “${st.company}” to ${G.displayName(p)}`);
+    render();
   }
 
   function clientOptions() {
@@ -78,7 +104,7 @@
           <div class="f s3"><label for="w-to">To month</label><input id="w-to" type="month" value="${st.to}"></div>
           <div class="f s3"><span class="lbl">&nbsp;</span><button class="primary" id="w-fetch">Read from Tally</button></div>
         </div>
-        ${!c && st.company ? `<div class="note warn" style="margin-top:10px">“${esc(st.company)}” is open in Tally but is not a GST Desk client yet. <button class="link" id="w-addclient">Add it as a client</button> (then add its GSTIN – needed for GSTR-1 and place-of-supply). Reading from Tally works without it.</div>` : ''}
+        ${!c && st.company ? linkBox() : ''}
         ${c && !c.gstin ? '<div class="note warn" style="margin-top:10px">This client has no GSTIN saved – add it on the Clients tab (needed for GSTR-1 and place-of-supply).</div>' : ''}
         ${st.status ? `<div class="note" style="margin-top:10px">${esc(st.status)}</div>` : ''}
         ${st.error ? `<div class="note err" style="margin-top:10px">${esc(st.error)}<br><span class="small">In TallyPrime: F1 (Help) → Settings → Connectivity → Client/Server configuration → TallyPrime acts as <b>Both</b>, Enable ODBC <b>Yes</b>, Port <b>${esc(st.port)}</b>. Restart Tally after changing.</span></div>` : ''}
@@ -272,6 +298,8 @@
     on('#w-tol', 'change', (e) => { st.tolerance = +e.target.value || 0; saveSettings(); });
     on('#w-list', 'click', () => listCompanies(false));
     on('#w-addclient', 'click', addClientFromTally);
+    on('#w-link', 'click', () => { const v = $('#w-linkto') && $('#w-linkto').value; if (v) linkTo(v); else App.toast('Choose the client first'); });
+    on('#w-fromca', 'click', () => chrome.tabs.create({ url: 'https://smishra724.github.io/ca-desk/#gstdesk=' + encodeURIComponent(st.company) }));
     on('#w-fetch', 'click', fetchTally);
     on('#w-reg', 'click', () => XLSXW.save(`Registers_${fileBase()}.xlsx`, W.registers(st.docs)));
     on('#w-r1', 'click', () => {
@@ -303,6 +331,10 @@
     on('#w-3bx', 'click', () => XLSXW.save(`GSTR3B_working_${fileBase()}.xlsx`, W.threeBSheet(st.threeB, st.twoB)));
   }
 
+  // Clients sent from CA Desk (or added elsewhere) show up here straight away
+  chrome.storage.onChanged.addListener((ch, area) => {
+    if (area === 'local' && ch[G.KEYS.profiles] && ready && !$('#view-work')?.hidden) setTimeout(render, 80);
+  });
   let ready = false;
   document.addEventListener('gstf-view', async (e) => {
     if (e.detail !== 'work') return;
