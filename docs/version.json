@@ -1,6 +1,6 @@
 {
-  "version": "3.1.1",
+  "version": "3.1.2",
   "zip": "gst-desk.zip",
-  "notes": "Export sales also recognised from the sales ledger name (Export Sales, Export of Services, Zero rated, LUT).",
+  "notes": "Tally & GST work: flags when the Tally company does not match the client, never re-links silently, and says when a month has no sales entered.",
   "storeUrl": ""
 }

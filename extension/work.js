@@ -30,7 +30,7 @@
   const toks = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9 ]+/g, ' ').split(/\s+/).filter(t => t && !STOP.has(t));
   const sim = (a, b) => { const x = toks(a), y = new Set(toks(b)); if (!x.length || !y.size) return 0; const hit = x.filter(t => y.has(t)).length; return hit / Math.max(x.length, y.size) + (x[0] && y.has(x[0]) ? 0.25 : 0); };
   const score = (p, company) => Math.max(...[p.nickname, p.partA.legalName, p.business.tradeName].filter(Boolean).map(n => sim(company, n)), 0);
-  const clientFor = (company) => App.profiles.find(p => p.tally.company === company) || App.profiles.find(p => namesOf(p).includes(norm(company))) || null;
+  const clientFor = (company) => App.profiles.find(p => p.tally.company === company && score(p, company) >= 0.35) || App.profiles.find(p => [p.nickname, p.partA.legalName, p.business.tradeName].filter(Boolean).map(norm).includes(norm(company))) || App.profiles.find(p => p.tally.company === company) || null;
   const monthEnd = (ym) => { const [y, m] = ym.split('-').map(Number); return `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`; };
   const fileBase = () => `${(client() ? G.displayName(client()) : st.company || 'client').replace(/[\\/:*?"<>|]+/g, ' ').trim()}_${st.from}${st.to !== st.from ? '_to_' + st.to : ''}`;
 
@@ -105,6 +105,8 @@
           <div class="f s3"><span class="lbl">&nbsp;</span><button class="primary" id="w-fetch">Read from Tally</button></div>
         </div>
         ${!c && st.company ? linkBox() : ''}
+        ${c && st.company && score(c, st.company) < 0.35 ? `<div class="note warn" style="margin-top:10px"><b>Check the company:</b> client is <b>${esc(G.displayName(c))}</b> but “Company in Tally” is <b>${esc(st.company)}</b>. ${st.companies.length ? `Read from: <select id="w-pickco">${['', ...st.companies].map(n => `<option value="${esc(n)}"${n === st.company ? ' selected' : ''}>${n ? esc(n) : '— choose —'}</option>`).join('')}</select>` : 'Type the right company name, or click “List open companies”.'}</div>`
+          : c && st.company && c.tally.company && norm(c.tally.company) !== norm(st.company) ? `<div class="note warn" style="margin-top:10px">${esc(G.displayName(c))} is linked to Tally company “${esc(c.tally.company)}”, but you are reading “${esc(st.company)}”. <button class="link" id="w-relink">Link it to “${esc(st.company)}” instead</button></div>` : ''}
         ${c && !c.gstin ? '<div class="note warn" style="margin-top:10px">This client has no GSTIN saved – add it on the Clients tab (needed for GSTR-1 and place-of-supply).</div>' : ''}
         ${st.status ? `<div class="note" style="margin-top:10px">${esc(st.status)}${st.raw ? ' <button class="link" id="w-raw" title="Saves exactly what Tally sent, to share if something is not picked up">Save Tally reply (for support)</button>' : ''}</div>` : ''}
         ${st.error ? `<div class="note err" style="margin-top:10px">${esc(st.error)}<br><span class="small">In TallyPrime: F1 (Help) → Settings → Connectivity → Client/Server configuration → TallyPrime acts as <b>Both</b>, Enable ODBC <b>Yes</b>, Port <b>${esc(st.port)}</b>. Restart Tally after changing.</span></div>` : ''}
@@ -214,12 +216,14 @@
       st.docs = await t.documents(st.company, `${st.from}-01`, monthEnd(st.to), topts,
         (msg) => { st.status = msg; const n = $('#work .note'); if (n) n.textContent = msg; });
       const live = st.docs.filter(d => !d.cancelled), ex = live.filter(d => d.export && d.kind === 'sales').length;
-      const other = Object.entries(stats.skipped).filter(([t]) => !/^(receipt|payment|contra|journal|memorandum|reversing journal|physical stock|stock journal|delivery note|receipt note|rejections? (in|out)|sales order|purchase order|job work.*|material (in|out))$/i.test(t));
+      const other = Object.entries(stats.skipped).filter(([t]) => !/^(receipt|payment|contra|journal|memorandum|reversing journal|physical stock|stock journal|delivery note|receipt note|rejections? (in|out)|sales order|purchase order|job work.*|material (in|out)|attendance|payroll)$/i.test(t));
       st.status = `Read ${live.length} GST vouchers from “${st.company}” (${st.from} to ${st.to})${ex ? ` – including ${ex} export/SEZ invoice${ex > 1 ? 's' : ''}` : ''}. Tally sent ${stats.seen} vouchers in all.` +
         (other.length ? ` Not read as sales/purchase: ${other.map(([t, n]) => `“${t}” (${n})`).join(', ')} – tell GST Desk if one of these is a sales or purchase type.` : '') +
-        (!stats.seen ? ' Tally sent no vouchers for these months – check the From/To months and that the company has entries in that period.' : '');
+        (!stats.seen ? ' Tally sent no vouchers for these months – check the From/To months and that the company has entries in that period.' : '') +
+        (stats.seen && !live.length ? ` No sales or purchases are entered in “${st.company}” for this period – Tally only has: ${Object.entries(stats.skipped).map(([t, n]) => `${t} (${n})`).join(', ')}. Check that this is the right company and month.` : '');
       st.raw = topts.raw || null;
-      if (c && c.tally.company !== st.company) { c.tally.company = st.company; App.saveProfiles(); }
+      // link the client to this Tally company only if it had none and the names look alike (never silently re-link)
+      if (c && !c.tally.company && score(c, st.company) >= 0.5) { c.tally.company = st.company; App.saveProfiles(); }
     } catch (e) { st.error = e.message; st.status = ''; }
     render();
   }
@@ -343,6 +347,8 @@
       render();
     });
     on('#w-g1up', 'click', uploadG1);
+    on('#w-pickco', 'change', (e) => { st.company = e.target.value; const c = client(); if (c && st.company && (!c.tally.company || score(c, c.tally.company) < 0.35)) { c.tally.company = st.company; App.saveProfiles(); } st.docs = null; st.status = ''; saveSettings(); render(); });
+    on('#w-relink', 'click', () => { const c = client(); if (c) { c.tally.company = st.company; App.saveProfiles(); App.toast('Linked'); render(); } });
     on('#w-raw', 'click', () => { if (!st.raw) return; const b = new Blob([JSON.stringify({ company: st.company, from: st.from, to: st.to, replies: st.raw }, null, 1)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `tally-reply-${fileBase()}.json`; a.click(); });
     on('#w-r1dl', 'click', () => { const c = client(); const [y, m] = st.from.split('-'); downloadJson(`GSTR1_${c.gstin}_${m}${y}.json`, st.gstr1.json); });
     on('#w-r1x', 'click', () => XLSXW.save(`GSTR1_exceptions_${fileBase()}.xlsx`, [{ name: 'Exceptions', rows: [['Date', 'Voucher no.', 'Party', 'GSTIN', 'Issue'],
