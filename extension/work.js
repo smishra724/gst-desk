@@ -164,7 +164,7 @@
       <tr><td>Export invoices (6A EXP${(j.exp || []).length ? ': ' + (j.exp || []).map(e => `${e.exp_typ === 'WPAY' ? 'with IGST' : 'under LUT'} ${e.inv.length}`).join(', ') : ''})</td><td class="n">${cnt('exp')}</td></tr>
       <tr><td>Credit/debit notes (unregistered / export)</td><td class="n">${(j.cdnur || []).length}</td></tr>
       <tr><td>B2CS rows</td><td class="n">${(j.b2cs || []).length}</td></tr><tr><td>Credit/debit notes (registered)</td><td class="n">${cnt('cdnr')}</td></tr>
-      <tr><td>HSN rows (B2B / B2C)</td><td class="n">${j.hsn.hsn_b2b.length} / ${j.hsn.hsn_b2c.length}</td></tr>
+      <tr><td>HSN rows (B2B / B2C)</td><td class="n">${((j.hsn || {}).hsn_b2b || []).length} / ${((j.hsn || {}).hsn_b2c || []).length}</td></tr>
       <tr class="sum"><td>Net taxable value</td><td class="n">₹${inr(st.gstr1.totals.txval)}</td></tr></tbody></table>
       ${ex.length ? `<div class="note warn" style="margin-top:10px">${ex.length} item${ex.length > 1 ? 's' : ''} need your attention:<ul style="margin:6px 0 0;padding-left:18px">${ex.slice(0, 8).map(e => `<li>${esc(e.doc.number || '')} ${esc(e.doc.party || '')}: ${esc(e.msg)}</li>`).join('')}${ex.length > 8 ? `<li>…and ${ex.length - 8} more (see Excel)</li>` : ''}</ul></div>` : '<div class="note" style="margin-top:10px">No exceptions.</div>'}`;
   }
