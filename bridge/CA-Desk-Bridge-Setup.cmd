@@ -15,6 +15,7 @@ $dir = Join-Path $env:LOCALAPPDATA 'CADeskBridge'
 $base = 'https://smishra724.github.io/gst-desk/bridge/'
 $startMenu = Join-Path ([Environment]::GetFolderPath('Programs')) 'CA Desk Bridge.lnk'
 $startup = Join-Path ([Environment]::GetFolderPath('Startup')) 'CA Desk Bridge.lnk'
+$uninstKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\CADeskBridge'
 
 function Stop-Bridge {
   Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
@@ -35,7 +36,12 @@ if ($env:MODE -eq '/uninstall') {
   Stop-Bridge
   Remove-Item -LiteralPath $startMenu, $startup -Force -ErrorAction SilentlyContinue
   $cfg = $null; try { $cfg = Get-Content -Raw -LiteralPath (Join-Path $dir 'config.json') | ConvertFrom-Json } catch { }
+  Remove-Item -LiteralPath $uninstKey -Recurse -Force -ErrorAction SilentlyContinue
   Remove-Item -Recurse -Force -LiteralPath $dir -ErrorAction SilentlyContinue
+  if (Test-Path -LiteralPath $dir) {   # this setup program itself is still running from there: remove it once it closes
+    $q = $dir.Replace('"', '')
+    Start-Process -WindowStyle Hidden -FilePath 'cmd.exe' -ArgumentList "/c for /l %i in (1,1,900) do (rmdir /s /q `"$q`" 2>nul & if not exist `"$q`" exit) & ping -n 2 127.0.0.1 >nul"
+  }
   Write-Host 'CA Desk Bridge removed.' -ForegroundColor Green
   if ($cfg -and $cfg.extDir -and -not ($cfg.extDir -like "$dir*")) { Write-Host "Your extension folder was left as it is: $($cfg.extDir)" }
   Write-Host 'If you no longer need the extension, remove "CA Desk Suite" in chrome://extensions.'
@@ -81,6 +87,19 @@ foreach ($p in @($startMenu, $startup)) {
   $l.IconLocation = (Join-Path $dir 'icon.ico'); $l.WorkingDirectory = $dir; $l.Description = 'CA Desk Bridge'; $l.Save()
 }
 Start-Process -FilePath 'wscript.exe' -ArgumentList "`"$(Join-Path $dir 'launcher.vbs')`""
+
+# Settings -> Apps (uninstall entry) when installed from CA-Desk-Bridge-Setup.exe
+try {
+  $exe = Join-Path $dir 'CA-Desk-Bridge-Setup.exe'
+  if ($env:SETUP_EXE -and (Test-Path -LiteralPath $env:SETUP_EXE) -and ($env:SETUP_EXE -ne $exe)) { Copy-Item -LiteralPath $env:SETUP_EXE -Destination $exe -Force }
+  if (Test-Path -LiteralPath $exe) {
+    New-Item -Path $uninstKey -Force | Out-Null
+    $props = @{ DisplayName = 'CA Desk Bridge'; DisplayVersion = [string]$v.version; Publisher = 'SM Consultancy'; DisplayIcon = (Join-Path $dir 'icon.ico');
+      InstallLocation = $dir; UninstallString = "`"$exe`" /uninstall"; URLInfoAbout = 'https://smishra724.github.io/ca-desk/' }
+    foreach ($k in $props.Keys) { New-ItemProperty -Path $uninstKey -Name $k -Value $props[$k] -PropertyType String -Force | Out-Null }
+    foreach ($k in 'NoModify', 'NoRepair') { New-ItemProperty -Path $uninstKey -Name $k -Value 1 -PropertyType DWord -Force | Out-Null }
+  }
+} catch { }
 
 Write-Host ''
 Write-Host "CA Desk Bridge v$($v.version) is installed and running (icon near the clock)." -ForegroundColor Green

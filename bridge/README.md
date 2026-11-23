@@ -8,8 +8,12 @@ A small desktop helper for CA Desk / GST Desk — installed once, like a DSC uti
 - optional *Update automatically in the background* (tray menu);
 - lets CA Desk read from Tally and see DSC certificates on this computer (only `127.0.0.1`, only CA Desk / the extension).
 
-Install: download `CA-Desk-Bridge-Setup.zip`, unzip, double-click `CA-Desk-Bridge-Setup.cmd` (per user, no admin).
-Uninstall: `CA-Desk-Bridge-Setup.cmd /uninstall`.
+Install: download `CA-Desk-Bridge-Setup.exe` and double-click it (per user, no admin). It is not code-signed, so SmartScreen may say
+"Windows protected your PC" → More info → Run anyway. (`CA-Desk-Bridge-Setup.zip` with the `.cmd` does the same.)
+Uninstall: Settings → Apps → CA Desk Bridge → Uninstall, or `CA-Desk-Bridge-Setup.exe /uninstall`.
+
+The .exe is a small launcher (`exe/setup.c`) with the installer script from `CA-Desk-Bridge-Setup.cmd` embedded.
+Rebuild: `MINGW=/path/to/llvm-mingw python3 tools/build_exe.py` (or set MINGW when running `tools/release.py`).
 
 Files: `bridge.ps1` (the app, Windows PowerShell 5.1), `launcher.vbs` (starts it without a window), `icon.ico`,
 `version.json` (written by `tools/release.py`: app files + extension files the Bridge downloads).

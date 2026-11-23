@@ -28,4 +28,6 @@ json.dump({'version': bv, 'files': ['bridge.ps1', 'launcher.vbs', 'icon.ico'], '
           open('bridge/version.json', 'w'), indent=1)
 with zipfile.ZipFile('bridge/CA-Desk-Bridge-Setup.zip', 'w', zipfile.ZIP_DEFLATED) as z:
     z.write('bridge/CA-Desk-Bridge-Setup.cmd', 'CA-Desk-Bridge-Setup.cmd')
+if os.environ.get('MINGW'):   # also rebuild CA-Desk-Bridge-Setup.exe (embeds the installer script)
+    import subprocess; subprocess.check_call([sys.executable, 'tools/build_exe.py'])
 print('extension', v, len(files), 'files; bridge', bv)
