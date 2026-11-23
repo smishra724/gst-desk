@@ -8,7 +8,7 @@
 param([switch]$NoTray, [int]$Port = 47731, [string]$Root = '', [string]$Base = 'https://smishra724.github.io/gst-desk/bridge/')
 
 $ErrorActionPreference = 'Stop'
-$AppVersion = '1.0.0'
+$AppVersion = '1.1.0'
 if (-not $Root) { $Root = Split-Path -Parent $MyInvocation.MyCommand.Path }
 
 # one copy only
@@ -31,6 +31,7 @@ function Get-Config {
   if (Test-Path -LiteralPath $f) { try { return (Get-Content -Raw -LiteralPath $f | ConvertFrom-Json) } catch { } }
   return [pscustomobject]@{ extDir = (Join-Path $State.root 'extension'); auto = $false }
 }
+function Test-ConnectorOnly { return ((Get-Config).connectorOnly -eq $true) }   # installed from CA-Desk-Connector.exe: Tally/DSC connector only, no browser extension
 function Get-ExtDir { $c = Get-Config; if ($c.extDir) { return [string]$c.extDir }; return (Join-Path $State.root 'extension') }
 function Get-ExtVersion {
   $m = Join-Path (Get-ExtDir) 'manifest.json'
@@ -55,6 +56,7 @@ function Invoke-Check {
 }
 function Test-UpdateAvailable {
   $l = $State.latest; if (-not $l) { return $false }
+  if (Test-ConnectorOnly) { return (Test-Newer ([string]$l.version) $State.version) }
   return ((Test-Newer ([string]$l.version) $State.version) -or (Test-Newer ([string]$l.extensionVersion) (Get-ExtVersion)))
 }
 function Save-Url([string]$url, [string]$path) {
@@ -69,13 +71,14 @@ function Invoke-Update {
     New-Item -ItemType Directory -Force -Path $stage | Out-Null
     # 1. download everything first (nothing changes if the download breaks)
     $extBase = [string]$l.extensionBase
-    $n = 0; $all = @($l.extensionFiles).Count + @($l.files).Count
-    foreach ($f in @($l.extensionFiles)) { $n++; $State.progress = "Downloading $n of $all"; Save-Url ($extBase + $f) (Join-Path (Join-Path $stage 'ext') $f) }
+    $extFiles = $(if (Test-ConnectorOnly) { @() } else { @($l.extensionFiles) })
+    $n = 0; $all = $extFiles.Count + @($l.files).Count
+    foreach ($f in $extFiles) { $n++; $State.progress = "Downloading $n of $all"; Save-Url ($extBase + $f) (Join-Path (Join-Path $stage 'ext') $f) }
     foreach ($f in @($l.files)) { $n++; $State.progress = "Downloading $n of $all"; Save-Url ($State.base + $f) (Join-Path (Join-Path $stage 'app') $f) }
     # 2. put the extension files in place (the extension restarts itself when it sees the new version)
     $State.progress = 'Installing'
     $ext = Get-ExtDir
-    foreach ($f in @($l.extensionFiles)) {
+    foreach ($f in $extFiles) {
       $dst = Join-Path $ext $f; $dd = Split-Path -Parent $dst
       if (-not (Test-Path -LiteralPath $dd)) { New-Item -ItemType Directory -Force -Path $dd | Out-Null }
       Copy-Item -LiteralPath (Join-Path (Join-Path $stage 'ext') $f) -Destination $dst -Force
@@ -89,7 +92,7 @@ function Invoke-Update {
     }
     Remove-Item -Recurse -Force -LiteralPath $stage -ErrorAction SilentlyContinue
     $State.updatedTo = [string]$l.extensionVersion
-    $State.message = "Updated: extension v$($l.extensionVersion)" + $(if ($restart) { ", CA Desk Bridge v$($l.version)" } else { '' })
+    $State.message = $(if ($extFiles.Count) { "Updated: extension v$($l.extensionVersion)" + $(if ($restart) { ", CA Desk Bridge v$($l.version)" } else { '' }) } elseif ($restart) { "Updated to v$($l.version)" } else { 'Already up to date' })
     $State.progress = ''
     if ($restart) { $State.restart = $true }
   } catch {
@@ -147,7 +150,7 @@ while (-not $State.stop) {
       '/status' {
         $ev = Get-ExtVersion
         Send-Resp $stream 200 'application/json' (Json ([ordered]@{ app = 'CA Desk Bridge'; version = $State.version; extensionVersion = $ev; extensionRunning = $State.extRunning; extensionSeen = $State.extSeen
-          extensionFolder = (Get-ExtDir); latest = $(if ($State.latest) { [ordered]@{ version = [string]$State.latest.version; extensionVersion = [string]$State.latest.extensionVersion; notes = [string]$State.latest.notes } } else { $null })
+          connectorOnly = (Test-ConnectorOnly); extensionFolder = (Get-ExtDir); latest = $(if ($State.latest) { [ordered]@{ version = [string]$State.latest.version; extensionVersion = [string]$State.latest.extensionVersion; notes = [string]$State.latest.notes } } else { $null })
           updateAvailable = (Test-UpdateAvailable); updating = $State.updating; progress = $State.progress; lastCheck = $State.lastCheck; lastError = $State.lastError; message = $State.message })) $cors
       }
       '/ext' {   # the extension asks about once a minute: is there a newer version in its folder?
@@ -247,10 +250,16 @@ $miStart = New-Object System.Windows.Forms.ToolStripMenuItem('Start with Windows
 [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
 $miExit = $menu.Items.Add('Exit')
 $icon.ContextMenuStrip = $menu
+if (Test-ConnectorOnly) { $miExt.Visible = $false; $miFolder.Visible = $false }
+$exe = Join-Path $Root 'CA-Desk-Connector.exe'
 
 $startupLnk = Join-Path ([Environment]::GetFolderPath('Startup')) 'CA Desk Bridge.lnk'
 function Set-Startup([bool]$on) {
-  if ($on) { $sh = New-Object -ComObject WScript.Shell; $l = $sh.CreateShortcut($startupLnk); $l.TargetPath = 'wscript.exe'; $l.Arguments = "`"$(Join-Path $Root 'launcher.vbs')`""; $l.IconLocation = $ico; $l.WorkingDirectory = $Root; $l.Save() }
+  if ($on) {
+    $sh = New-Object -ComObject WScript.Shell; $l = $sh.CreateShortcut($startupLnk)
+    if (Test-Path -LiteralPath $exe) { $l.TargetPath = $exe; $l.Arguments = '/startup' } else { $l.TargetPath = 'wscript.exe'; $l.Arguments = "`"$(Join-Path $Root 'launcher.vbs')`"" }
+    $l.IconLocation = $ico; $l.WorkingDirectory = $Root; $l.Save()
+  }
   else { Remove-Item -LiteralPath $startupLnk -Force -ErrorAction SilentlyContinue }
 }
 function Set-Auto([bool]$on) {
@@ -275,14 +284,14 @@ $timer.add_Tick({
   $miAuto.Checked = ((Get-Config).auto -eq $true)
   $miStart.Checked = (Test-Path -LiteralPath $startupLnk)
   if ($State.updating) { $miUpdate.Text = "Updating… $($State.progress)"; $miUpdate.Enabled = $false }
-  elseif ($avail) { $miUpdate.Text = "Update now (v$($State.latest.extensionVersion) available)"; $miUpdate.Enabled = $true }
+  elseif ($avail) { $miUpdate.Text = "Update now (v$(if (Test-ConnectorOnly) { $State.latest.version } else { $State.latest.extensionVersion }) available)"; $miUpdate.Enabled = $true }
   else { $miUpdate.Text = 'Up to date' + $(if ($State.lastCheck) { " (checked $($State.lastCheck))" } else { '' }); $miUpdate.Enabled = $false }
   $tip = "CA Desk Bridge v$AppVersion - " + $(if ($State.updating) { 'updating' } elseif ($avail) { 'update available' } else { 'up to date' })
   if ($tip.Length -gt 63) { $tip = $tip.Substring(0, 63) }
   $icon.Text = $tip
-  if ($avail -and -not $lastAvail -and -not $State.updating) { $icon.ShowBalloonTip(5000, 'CA Desk Bridge', "A new version is ready (v$($State.latest.extensionVersion)). Right-click the tray icon → Update now.", 'Info') }
+  if ($avail -and -not $lastAvail -and -not $State.updating) { $icon.ShowBalloonTip(5000, 'CA Desk Bridge', "A new version is ready (v$(if (Test-ConnectorOnly) { $State.latest.version } else { $State.latest.extensionVersion })). Right-click the tray icon → Update now.", 'Info') }
   $lastAvail = $avail
-  if ($State.message -and $State.message -ne $lastMsg) { $icon.ShowBalloonTip(4000, 'CA Desk Bridge', $State.message + '. The extension restarts by itself within a minute.', 'Info'); $lastMsg = $State.message }
+  if ($State.message -and $State.message -ne $lastMsg) { $icon.ShowBalloonTip(4000, 'CA Desk Bridge', $State.message + $(if (Test-ConnectorOnly) { '.' } else { '. The extension restarts by itself within a minute.' }), 'Info'); $lastMsg = $State.message }
   if ($State.lastError -and $State.lastError -ne $lastErr) { $icon.ShowBalloonTip(5000, 'CA Desk Bridge', $State.lastError, 'Warning'); $lastErr = $State.lastError }
   if ($State.restart) { $timer.Stop(); $icon.Visible = $false; Restart-Self; [System.Windows.Forms.Application]::Exit() }
 })

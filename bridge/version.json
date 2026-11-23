@@ -1,5 +1,5 @@
 {
- "version": "1.0.0",
+ "version": "1.1.0",
  "files": [
   "bridge.ps1",
   "launcher.vbs",
@@ -44,5 +44,5 @@
   "work.js",
   "xlsx.js"
  ],
- "notes": "CA Desk Bridge desktop app: Update now in the background; extension restarts itself."
+ "notes": "CA Desk Connector .exe (connector only)"
 }

@@ -8,7 +8,10 @@ A small desktop helper for CA Desk / GST Desk — installed once, like a DSC uti
 - optional *Update automatically in the background* (tray menu);
 - lets CA Desk read from Tally and see DSC certificates on this computer (only `127.0.0.1`, only CA Desk / the extension).
 
-Install: download `CA-Desk-Bridge-Setup.exe` and double-click it (per user, no admin). It is not code-signed, so SmartScreen may say
+**Connector only:** `CA-Desk-Connector.exe` — double-click to install and start (Tally + DSC for CA Desk; no browser extension).
+Run it again any time to start it / update it; `CA-Desk-Connector.exe /uninstall` (or Settings → Apps) removes it.
+
+**With the browser extension:** download `CA-Desk-Bridge-Setup.exe` and double-click it (per user, no admin). It is not code-signed, so SmartScreen may say
 "Windows protected your PC" → More info → Run anyway. (`CA-Desk-Bridge-Setup.zip` with the `.cmd` does the same.)
 Uninstall: Settings → Apps → CA Desk Bridge → Uninstall, or `CA-Desk-Bridge-Setup.exe /uninstall`.
 

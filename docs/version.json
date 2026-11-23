@@ -1,6 +1,6 @@
 {
   "version": "3.2.0",
   "zip": "gst-desk.zip",
-  "notes": "CA Desk Bridge desktop app: Update now in the background; extension restarts itself.",
+  "notes": "CA Desk Connector .exe (connector only)",
   "storeUrl": ""
 }

@@ -24,3 +24,20 @@ subprocess.check_call([rc, '-I', d, f'-DVMAJ={a}', f'-DVMIN={b}', f'-DVPAT={c}',
 subprocess.check_call([cc, '-municode', '-Os', '-s', '-static', '-o', out, os.path.join(d, 'setup.c'), res], cwd=d)
 os.remove(res); os.remove(os.path.join(d, 'script.h'))
 print('built', out, os.path.getsize(out), 'bytes')
+
+# ---- CA-Desk-Connector.exe: connector only (no browser extension) ----
+def carr(name, data):
+    return 'static const unsigned char %s[] = {%s};\n#define %s_LEN %d\n' % (name, ','.join(str(b) for b in data), name, len(data))
+def crlf(path):
+    return open(path, newline='').read().replace('\r\n', '\n').replace('\n', '\r\n').encode('utf-8')
+B = os.path.join(ROOT, 'bridge')
+with open(os.path.join(d, 'payload.h'), 'w') as h:
+    h.write(carr('BOOT', crlf(os.path.join(d, 'connector.ps1'))))
+    h.write(carr('BRIDGE', crlf(os.path.join(B, 'bridge.ps1'))))
+    h.write(carr('LAUNCHER', open(os.path.join(B, 'launcher.vbs'), 'rb').read()))
+    h.write(carr('ICON', open(os.path.join(B, 'icon.ico'), 'rb').read()))
+out = os.path.join(B, 'CA-Desk-Connector.exe')
+subprocess.check_call([rc, '-I', d, f'-DVMAJ={a}', f'-DVMIN={b}', f'-DVPAT={c}', f'-DVSTR=\\"{bv}\\"', os.path.join(d, 'connector.rc'), '-O', 'coff', '-o', res], cwd=d)
+subprocess.check_call([cc, '-municode', '-mwindows', '-Os', '-s', '-static', '-o', out, os.path.join(d, 'connector.c'), res, '-lshell32'], cwd=d)
+os.remove(res); os.remove(os.path.join(d, 'payload.h'))
+print('built', out, os.path.getsize(out), 'bytes')
