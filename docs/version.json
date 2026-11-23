@@ -1,6 +1,6 @@
 {
   "version": "3.2.0",
   "zip": "gst-desk.zip",
-  "notes": "CA Desk Connector .exe (connector only)",
+  "notes": "CA-Desk-Bridge.exe: one installer for the Bridge + GST Desk extension",
   "storeUrl": ""
 }

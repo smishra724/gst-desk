@@ -8,7 +8,7 @@
 param([switch]$NoTray, [int]$Port = 47731, [string]$Root = '', [string]$Base = 'https://smishra724.github.io/gst-desk/bridge/')
 
 $ErrorActionPreference = 'Stop'
-$AppVersion = '1.1.0'
+$AppVersion = '1.2.0'
 if (-not $Root) { $Root = Split-Path -Parent $MyInvocation.MyCommand.Path }
 
 # one copy only
@@ -251,7 +251,7 @@ $miStart = New-Object System.Windows.Forms.ToolStripMenuItem('Start with Windows
 $miExit = $menu.Items.Add('Exit')
 $icon.ContextMenuStrip = $menu
 if (Test-ConnectorOnly) { $miExt.Visible = $false; $miFolder.Visible = $false }
-$exe = Join-Path $Root 'CA-Desk-Connector.exe'
+$exe = Join-Path $Root 'CA-Desk-Bridge.exe'; if (-not (Test-Path -LiteralPath $exe)) { $exe = Join-Path $Root 'CA-Desk-Connector.exe' }
 
 $startupLnk = Join-Path ([Environment]::GetFolderPath('Startup')) 'CA Desk Bridge.lnk'
 function Set-Startup([bool]$on) {

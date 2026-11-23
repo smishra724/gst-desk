@@ -36,8 +36,9 @@ with open(os.path.join(d, 'payload.h'), 'w') as h:
     h.write(carr('BRIDGE', crlf(os.path.join(B, 'bridge.ps1'))))
     h.write(carr('LAUNCHER', open(os.path.join(B, 'launcher.vbs'), 'rb').read()))
     h.write(carr('ICON', open(os.path.join(B, 'icon.ico'), 'rb').read()))
-out = os.path.join(B, 'CA-Desk-Connector.exe')
+out = os.path.join(B, 'CA-Desk-Bridge.exe')
 subprocess.check_call([rc, '-I', d, f'-DVMAJ={a}', f'-DVMIN={b}', f'-DVPAT={c}', f'-DVSTR=\\"{bv}\\"', os.path.join(d, 'connector.rc'), '-O', 'coff', '-o', res], cwd=d)
 subprocess.check_call([cc, '-municode', '-mwindows', '-Os', '-s', '-static', '-o', out, os.path.join(d, 'connector.c'), res, '-lshell32'], cwd=d)
 os.remove(res); os.remove(os.path.join(d, 'payload.h'))
 print('built', out, os.path.getsize(out), 'bytes')
+import shutil; shutil.copyfile(out, os.path.join(B, 'CA-Desk-Connector.exe'))   # old download link

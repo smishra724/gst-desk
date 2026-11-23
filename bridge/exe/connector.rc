@@ -12,11 +12,11 @@ BEGIN
     BLOCK "040904B0"
     BEGIN
       VALUE "CompanyName", "SM Consultancy"
-      VALUE "FileDescription", "CA Desk Connector"
-      VALUE "ProductName", "CA Desk Connector"
+      VALUE "FileDescription", "CA Desk Bridge"
+      VALUE "ProductName", "CA Desk Bridge"
       VALUE "FileVersion", VSTR
       VALUE "ProductVersion", VSTR
-      VALUE "OriginalFilename", "CA-Desk-Connector.exe"
+      VALUE "OriginalFilename", "CA-Desk-Bridge.exe"
       VALUE "LegalCopyright", "SM Consultancy"
     END
   END

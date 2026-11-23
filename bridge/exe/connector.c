@@ -42,7 +42,7 @@ int WINAPI wWinMain(HINSTANCE h, HINSTANCE prev, PWSTR args, int show) {
   CreateDirectoryW(dir, NULL);
   if (!put(dir, L"connector.ps1", BOOT, BOOT_LEN, 1) || !put(dir, L"bridge.ps1", BRIDGE, BRIDGE_LEN, 1) ||
       !put(dir, L"launcher.vbs", LAUNCHER, LAUNCHER_LEN, 0) || !put(dir, L"icon.ico", ICON, ICON_LEN, 0)) {
-    MessageBoxW(NULL, L"Could not write to the TEMP folder.", L"CA Desk Connector", MB_ICONWARNING);
+    MessageBoxW(NULL, L"Could not write to the TEMP folder.", L"CA Desk Bridge", MB_ICONWARNING);
     rmtree(dir); return 1;
   }
   SetEnvironmentVariableW(L"CADESK_PAYLOAD", dir);
@@ -58,7 +58,7 @@ int WINAPI wWinMain(HINSTANCE h, HINSTANCE prev, PWSTR args, int show) {
   ZeroMemory(&pi, sizeof pi);
   DWORD code = 1;
   if (!CreateProcessW(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-    MessageBoxW(NULL, L"Could not start Windows PowerShell, which CA Desk Connector needs.", L"CA Desk Connector", MB_ICONWARNING);
+    MessageBoxW(NULL, L"Could not start Windows PowerShell, which CA Desk Bridge needs.", L"CA Desk Bridge", MB_ICONWARNING);
   } else {
     WaitForSingleObject(pi.hProcess, INFINITE);
     GetExitCodeProcess(pi.hProcess, &code);
