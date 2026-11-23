@@ -8,9 +8,10 @@ A small desktop helper for CA Desk / GST Desk — installed once, like a DSC uti
 - optional *Update automatically in the background* (tray menu);
 - lets CA Desk read from Tally and see DSC certificates on this computer (only `127.0.0.1`, only CA Desk / the extension).
 
-**One installer:** `CA-Desk-Bridge.exe` — double-click to install and start. It connects CA Desk to Tally + DSC, finds the
-GST Desk / CA Desk Suite folder Chrome already loads (or downloads a fresh copy and opens chrome://extensions for the
-one-time Load unpacked), and keeps it up to date. Run it again any time; `/uninstall` (or Settings → Apps) removes it.
+**One installer:** `CA-Desk-Bridge.exe` — double-click to install and start (like emBridge). Nothing is added to Chrome:
+the Bridge opens CA Desk in its own window (Chrome for Testing, downloaded once, ~150 MB, separate profile in
+%LOCALAPPDATA%\CADeskBridge\profile) with GST Desk loaded via --load-extension, connects Tally + DSC, and keeps
+everything up to date. Desktop icon "CA Desk" = `CA-Desk-Bridge.exe /open`. Local API: GET /open?url=… (CA Desk / gst.gov.in only). Run it again any time; `/uninstall` (or Settings → Apps) removes it.
 (`CA-Desk-Connector.exe` is the same file under its old name.)
 
 **Older console installer:** download `CA-Desk-Bridge-Setup.exe` and double-click it (per user, no admin). It is not code-signed, so SmartScreen may say

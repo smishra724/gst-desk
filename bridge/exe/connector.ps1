@@ -12,6 +12,8 @@ $oldExe = Join-Path $dir 'CA-Desk-Connector.exe'
 $startMenu = Join-Path ([Environment]::GetFolderPath('Programs')) 'CA Desk Bridge.lnk'
 $oldMenu = Join-Path ([Environment]::GetFolderPath('Programs')) 'CA Desk Connector.lnk'
 $startup = Join-Path ([Environment]::GetFolderPath('Startup')) 'CA Desk Bridge.lnk'
+$deskLnk = Join-Path ([Environment]::GetFolderPath('Desktop')) 'CA Desk.lnk'
+$deskMenu = Join-Path ([Environment]::GetFolderPath('Programs')) 'CA Desk.lnk'
 $uninstKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\CADeskBridge'
 function Say([string]$m, [string]$icon = 'Information') { [void][System.Windows.Forms.MessageBox]::Show($m, $title, 'OK', $icon) }
 function Test-Running { try { $m = [Threading.Mutex]::OpenExisting('CADeskBridge'); $m.Dispose(); return $true } catch { return $false } }
@@ -36,24 +38,6 @@ function Get-Manifest([string]$folder) {
   if ($folder -and (Test-Path -LiteralPath $m)) { try { return (Get-Content -Raw -LiteralPath $m | ConvertFrom-Json) } catch { } }
   return $null
 }
-function Find-ChromeExtension {   # the unpacked GST Desk / CA Desk Suite folder Chrome already loads (keeps its clients + saved passwords)
-  $found = @()
-  foreach ($ud in @((Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data'), (Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data'))) {
-    if (-not (Test-Path -LiteralPath $ud)) { continue }
-    foreach ($pf in Get-ChildItem -LiteralPath $ud -Directory -ErrorAction SilentlyContinue) {
-      foreach ($fn in 'Secure Preferences', 'Preferences') {
-        $f = Join-Path $pf.FullName $fn; if (-not (Test-Path -LiteralPath $f)) { continue }
-        try { $txt = [IO.File]::ReadAllText($f) } catch { continue }
-        foreach ($m in [regex]::Matches($txt, '"path"\s*:\s*"([A-Za-z]:\\\\[^"]+)"')) {
-          $pth = $m.Groups[1].Value.Replace('\\', '\')
-          $man = Get-Manifest $pth
-          if ($man -and ([string]$man.name -match 'GST Desk|CA Desk Suite') -and -not ($found -contains $pth)) { $found += $pth }
-        }
-      }
-    }
-  }
-  return $found
-}
 function Save-Url([string]$url, [string]$path) {
   $d = Split-Path -Parent $path; if (-not (Test-Path -LiteralPath $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
   $w = New-Object System.Net.WebClient; $w.Headers['Cache-Control'] = 'no-cache'; $w.DownloadFile($url + '?t=' + [DateTime]::UtcNow.Ticks, $path)
@@ -74,9 +58,10 @@ function Start-Bridge { Start-Process -FilePath 'wscript.exe' -ArgumentList "`"$
 
 try {
   if ($env:MODE -eq '/uninstall') {
-    if ([System.Windows.Forms.MessageBox]::Show('Remove CA Desk Bridge from this computer?', $title, 'YesNo', 'Question') -ne 'Yes') { return }
+    if ([System.Windows.Forms.MessageBox]::Show("Remove CA Desk Bridge from this computer?`n`nThis also removes the CA Desk window and the GST Desk data kept in it (your Masters stay in CA Desk).", $title, 'YesNo', 'Question') -ne 'Yes') { return }
     Stop-Bridge
-    Remove-Item -LiteralPath $startMenu, $oldMenu, $startup -Force -ErrorAction SilentlyContinue
+    Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -like "$dir*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Remove-Item -LiteralPath $startMenu, $oldMenu, $startup, $deskLnk, $deskMenu -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $uninstKey -Recurse -Force -ErrorAction SilentlyContinue
     $cfg = $null; try { $cfg = Get-Content -Raw -LiteralPath (Join-Path $dir 'config.json') | ConvertFrom-Json } catch { }
     Remove-Item -Recurse -Force -LiteralPath $dir -ErrorAction SilentlyContinue
@@ -99,27 +84,27 @@ try {
   if ($self -and ($self -ne $exe)) { try { Copy-Item -LiteralPath $self -Destination $exe -Force } catch { } }
   if (Test-Path -LiteralPath $oldExe) { Remove-Item -LiteralPath $oldExe -Force -ErrorAction SilentlyContinue }
 
-  # The browser extension (GST Desk): reuse the folder Chrome already loads, else install a fresh copy
+  # GST Desk (CA Desk Suite) files - the Bridge loads them into the CA Desk window itself; nothing to add to Chrome
   $cfgFile = Join-Path $dir 'config.json'
   $cfg = $null; try { $cfg = Get-Content -Raw -LiteralPath $cfgFile | ConvertFrom-Json } catch { }
-  $extDir = $(if ($cfg -and $cfg.extDir -and $cfg.connectorOnly -ne $true -and (Get-Manifest ([string]$cfg.extDir))) { [string]$cfg.extDir } else { '' })
-  $inChrome = @(Find-ChromeExtension)
-  if (-not $extDir -and $inChrome.Count) { $extDir = $inChrome[0] }
-  if (-not $extDir) { $extDir = Join-Path $dir 'extension' }
-  $loaded = ($inChrome -contains $extDir)
+  $extDir = $(if ($cfg -and $cfg.extDir -and (Get-Manifest ([string]$cfg.extDir))) { [string]$cfg.extDir } else { Join-Path $dir 'extension' })
   $auto = $false; if ($cfg -and $cfg.auto -eq $true) { $auto = $true }
-  $cfgChanged = -not ($cfg -and [string]$cfg.extDir -eq $extDir -and $cfg.connectorOnly -ne $true)
-  if ($cfgChanged) { if (-not $first) { Stop-Bridge }; [IO.File]::WriteAllText($cfgFile, ([pscustomobject]@{ extDir = $extDir; auto = $auto; connectorOnly = $false } | ConvertTo-Json)) }
-  $extVer = ''; $extErr = ''
-  try { $extVer = Install-Extension $extDir } catch { $extErr = $_.Exception.Message }
+  if (-not ($cfg -and [string]$cfg.extDir -eq $extDir -and $cfg.connectorOnly -ne $true)) { [IO.File]::WriteAllText($cfgFile, ([pscustomobject]@{ extDir = $extDir; auto = $auto; connectorOnly = $false } | ConvertTo-Json)) }
+  $extErr = ''
+  if ($first -or $upgrade -or -not (Get-Manifest $extDir)) { try { [void](Install-Extension $extDir) } catch { $extErr = $_.Exception.Message } }
 
   $lnkOk = $false; try { $lnkOk = ((New-Object -ComObject WScript.Shell).CreateShortcut($startMenu).TargetPath -eq $exe) } catch { }
-  if ($first -or $upgrade -or -not $lnkOk) {
+  $deskOk = Test-Path -LiteralPath $deskLnk
+  if ($first -or $upgrade -or -not $lnkOk -or -not $deskOk) {
     $sh = New-Object -ComObject WScript.Shell
     Remove-Item -LiteralPath $oldMenu -Force -ErrorAction SilentlyContinue
     foreach ($p in @($startMenu, $startup)) {
       $l = $sh.CreateShortcut($p); $l.TargetPath = $exe; $l.Arguments = $(if ($p -eq $startup) { '/startup' } else { '' })
       $l.IconLocation = (Join-Path $dir 'icon.ico'); $l.WorkingDirectory = $dir; $l.Description = 'CA Desk Bridge'; $l.Save()
+    }
+    foreach ($p in @($deskLnk, $deskMenu)) {   # "CA Desk" = open CA Desk (with GST Desk) in its own window
+      $l = $sh.CreateShortcut($p); $l.TargetPath = $exe; $l.Arguments = '/open'
+      $l.IconLocation = (Join-Path $dir 'icon.ico'); $l.WorkingDirectory = $dir; $l.Description = 'CA Desk'; $l.Save()
     }
     New-Item -Path $uninstKey -Force | Out-Null
     $props = @{ DisplayName = 'CA Desk Bridge'; DisplayVersion = $(if ($upgrade -or $first) { $newVer } else { $curVer }); Publisher = 'SM Consultancy'
@@ -131,17 +116,16 @@ try {
   $wasRunning = Test-Running
   if (-not $wasRunning) { Start-Bridge }
   $quiet = ($env:CADESK_STARTUP -eq '1')
-  if ($extErr) {
-    if (-not $quiet) { Say "CA Desk Bridge is running (Tally + DSC), but the GST Desk extension could not be downloaded:`n$extErr`n`nCheck the internet connection and open CA-Desk-Bridge.exe again." 'Warning' }
-  } elseif (-not $loaded -and -not $quiet) {
-    try { Set-Clipboard -Value $extDir } catch { }
-    try { Start-Process 'chrome.exe' 'chrome://extensions' } catch { }
-    Say "CA Desk Bridge v$newVer is installed and running (icon near the clock).`n`nGST Desk (CA Desk Suite v$extVer) is ready in:`n$extDir`n`nOne last step in Chrome, only this once (chrome://extensions has opened):`n  1. Turn on Developer mode (top right).`n  2. Click Load unpacked, press Ctrl+V in the folder box (the path is copied) and click Select Folder.`n  3. Reload CA Desk (Ctrl + F5).`n`nFrom then on the Bridge keeps GST Desk up to date by itself. Your clients and GST logins come back from Masters automatically."
-  } elseif ($first -or $upgrade -or $cfgChanged) {
-    Say "CA Desk Bridge v$newVer is installed and running (icon near the clock).`n`nIt connects CA Desk to Tally and DSC tokens and keeps GST Desk (CA Desk Suite v$extVer, already in Chrome) up to date.`nIf Chrome still shows an older version, click the reload arrow on CA Desk Suite in chrome://extensions once."
-  } elseif ($wasRunning -and -not $quiet) {
-    Say "CA Desk Bridge is already running - its icon is near the clock (it may be under the ^ arrow).`n`nRight-click the icon for Update now, Open CA Desk and Exit."
+  if ($quiet) { return }
+  # open CA Desk in its window (the Bridge sets the window up the first time - about 150 MB)
+  $opened = $false
+  for ($i = 0; $i -lt 40 -and -not $opened; $i++) {
+    try { $r = (New-Object System.Net.WebClient).DownloadString('http://127.0.0.1:47731/open'); $opened = $true } catch { Start-Sleep -Milliseconds 500 }
   }
+  if ($extErr) { Say "CA Desk Bridge is running, but GST Desk could not be downloaded:`n$extErr`n`nCheck the internet connection and open CA Desk again." 'Warning' }
+  elseif ($first -or $upgrade) {
+    Say "CA Desk Bridge v$newVer is installed and running (icon near the clock).`n`nCA Desk opens in its own window with GST Desk built in - nothing to add to Chrome.`nThe first time it downloads that window (about 150 MB), so give it a minute or two, then sign in to CA Desk once.`n`nFrom now on use the 'CA Desk' icon on your desktop. Tally and DSC tokens are connected through the Bridge."
+  } elseif (-not $opened) { Say 'CA Desk Bridge did not answer. Restart the computer and open CA Desk again.' 'Warning' }
 } catch {
   Say ("CA Desk Bridge could not start:`n`n" + $_.Exception.Message) 'Warning'
   exit 1

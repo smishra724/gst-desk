@@ -31,6 +31,7 @@ int WINAPI wWinMain(HINSTANCE h, HINSTANCE prev, PWSTR args, int show) {
   for (int i = 1; argv && i < argc; i++) {
     if (!_wcsicmp(argv[i], L"/uninstall") || !_wcsicmp(argv[i], L"-uninstall") || !_wcsicmp(argv[i], L"--uninstall")) SetEnvironmentVariableW(L"MODE", L"/uninstall");
     if (!_wcsicmp(argv[i], L"/startup")) SetEnvironmentVariableW(L"CADESK_STARTUP", L"1");
+    if (!_wcsicmp(argv[i], L"/open")) SetEnvironmentVariableW(L"CADESK_OPEN", L"1");
   }
   wchar_t self[MAX_PATH * 2];
   GetModuleFileNameW(NULL, self, MAX_PATH * 2);
