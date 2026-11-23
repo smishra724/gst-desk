@@ -1,6 +1,6 @@
 {
-  "version": "3.1.3",
+  "version": "3.1.4",
   "zip": "gst-desk.zip",
-  "notes": "Tally: reads the whole month (voucher collection first; if Tally's Day Book sends only one day, reads day by day).",
+  "notes": "GSTR-1 JSON: no empty sections, HSN/SAC from sales ledgers for invoices without stock items, exports under LUT at rate 0, checks before upload.",
   "storeUrl": ""
 }

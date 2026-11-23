@@ -120,6 +120,9 @@
         duty: DUTY(txt(l, 'GSTDUTYHEAD')),
         taxType: txt(l, 'TAXTYPE'),
         currency: txt(l, 'CURRENCYNAME'),
+        // HSN/SAC and GST rate set on an income ledger (used when the invoice has no stock items)
+        hsn: deep(l, 'HSNCODE') || deep(l, 'GSTHSNNAME') || deep(l, 'HSN'),
+        rate: (() => { let r = null; for (const rd of l.getElementsByTagName('RATEDETAILS.LIST')) if (/integrated|igst/i.test(txt(rd, 'GSTRATEDUTYHEAD'))) { const v = txt(rd, 'GSTRATE'); if (v !== '') r = num(v); } return r; })(),
         nature: txt(l, 'GSTNATUREOFSUPPLY') + ' ' + txt(l, 'GSTTYPEOFSUPPLY')
       };
     }
@@ -213,6 +216,8 @@
         if (under(m, ln, /^duties & taxes$/i)) { d.other += amt; continue; } // TDS / TCS
         if (/round/i.test(ln)) { d.other += amt; continue; }
         d.txval += Math.abs(amt);
+        d.ledLines = d.ledLines || [];
+        d.ledLines.push({ item: ln, hsn: lm.hsn || '', desc: ln, qty: 0, uqc: 'NA', value: Math.abs(amt), rate: lm.rate });
       }
       for (const e of inv) {
         const item = txt(e, 'STOCKITEMNAME');
@@ -228,6 +233,9 @@
           qty: qm ? Math.abs(num(qm[1])) : 0, uqc: uqcOf((qm && qm[2]) || im.unit), value: amt, rate });
         d.txval += amt;
       }
+      // accounting invoices (no stock items): HSN/SAC summary comes from the income ledgers
+      if (!d.lines.length && d.ledLines && d.ledLines.length) d.lines = d.ledLines;
+      delete d.ledLines;
       d.total = Math.abs(partyAmt) || r2(d.txval + d.igst + d.cgst + d.sgst + d.cess);
       ['txval', 'igst', 'cgst', 'sgst', 'cess', 'other', 'total'].forEach(k => { d[k] = r2(d[k]); });
       const tax = d.igst + d.cgst + d.sgst;

@@ -66,29 +66,23 @@
     const json = { gstin, fp, version: version || 'GST2.2', hash: 'hash', b2b: [], b2cl: [], exp: [], b2cs: [], cdnr: [], cdnur: [], hsn: { hsn_b2b: [], hsn_b2c: [] }, doc_issue: { doc_det: [] } };
     const expMap = new Map();
     // rate of an export line: from the items (LUT exports carry no tax, so the effective rate would be 0)
-    const expGroups = (d) => {
-      const withRate = d.lines.filter(l => l.rate !== null && l.rate !== undefined);
-      if (withRate.length && !d.igst) {
-        const by = new Map(); const tot = d.lines.reduce((a, l) => a + l.value, 0) || 1;
-        d.lines.forEach(l => { const rt = snap(l.rate ?? 0); by.set(rt, r2((by.get(rt) || 0) + d.txval * l.value / tot)); });
-        return Array.from(by, ([rt, txval]) => ({ rt, txval, igst: 0, cess: 0 }));
-      }
-      return rateGroups(d);
-    };
+    // without payment of tax (LUT / SEZ without payment): rate 0 so tax = 0 matches; with IGST: the normal rate split
+    const expGroups = (d) => d.igst > 0 ? rateGroups(d) : [{ rt: 0, txval: r2(d.txval), igst: 0, cgst: 0, sgst: 0, cess: 0 }];
     const b2bMap = new Map(), b2clMap = new Map(), b2csMap = new Map(), cdnrMap = new Map();
     const hsnMap = { b2b: new Map(), b2c: new Map() };
 
     const addHsn = (d, sign) => {
       const bucket = d.gstin ? hsnMap.b2b : hsnMap.b2c;
-      if (!d.lines.length) { if (d.txval) exceptions.push({ doc: d, msg: 'No stock items – HSN/SAC summary needs manual entry' }); return; }
+      if (!d.lines.length) { if (d.txval) exceptions.push({ doc: d, msg: 'No stock items and no HSN/SAC on the sales ledger – HSN summary needs manual entry' }); return; }
       const groupsTx = d.lines.reduce((a, l) => a + l.value, 0) || 1;
       d.lines.forEach(l => {
-        if (!l.hsn) exceptions.push({ doc: d, msg: `Item “${l.item}” has no HSN in Tally` });
-        const rt = snap(l.rate !== null && l.rate !== undefined ? l.rate : d.effRate);
+        if (!l.hsn) { exceptions.push({ doc: d, msg: `“${l.item}” has no HSN/SAC in Tally – left out of the HSN summary (the portal rejects blank HSN)` }); return; }
+        const rt = d.export && !(d.igst > 0) ? 0 : snap(l.rate !== null && l.rate !== undefined ? l.rate : d.effRate);
         const key = `${l.hsn}|${l.uqc}|${rt}`;
         const share = l.value / groupsTx;
-        const cur = bucket.get(key) || { hsn_sc: l.hsn || '', desc: (l.desc || '').slice(0, 30), user_desc: (l.desc || '').slice(0, 30), uqc: l.uqc || 'NA', qty: 0, rt, txval: 0, iamt: 0, camt: 0, samt: 0, csamt: 0 };
-        cur.qty = r2(cur.qty + sign * l.qty);
+        const isSac = /^99/.test(l.hsn || '');
+        const cur = bucket.get(key) || { hsn_sc: l.hsn || '', desc: (l.desc || '').slice(0, 30), user_desc: (l.desc || '').slice(0, 30), uqc: isSac ? 'NA' : (l.uqc || 'NA'), qty: 0, rt, txval: 0, iamt: 0, camt: 0, samt: 0, csamt: 0 };
+        cur.qty = isSac ? 0 : r2(cur.qty + sign * l.qty);
         cur.txval = r2(cur.txval + sign * d.txval * share);
         cur.iamt = r2(cur.iamt + sign * d.igst * share); cur.camt = r2(cur.camt + sign * d.cgst * share);
         cur.samt = r2(cur.samt + sign * d.sgst * share); cur.csamt = r2(cur.csamt + sign * d.cess * share);
@@ -193,12 +187,34 @@
     if (cn.length) json.doc_issue.doc_det.push({ doc_num: 5, docs: cn.map((d, i) => ({ num: i + 1, ...d })) });
 
     for (const k of ['b2b', 'b2cl', 'exp', 'b2cs', 'cdnr', 'cdnur']) if (!json[k].length) delete json[k];
+    // the portal rejects empty sections: drop them
+    if (!json.hsn.hsn_b2b.length) delete json.hsn.hsn_b2b;
+    if (!json.hsn.hsn_b2c.length) delete json.hsn.hsn_b2c;
+    if (!Object.keys(json.hsn).length) delete json.hsn;
+    if (!json.doc_issue.doc_det.length) delete json.doc_issue;
+    json.gt = 0; json.cur_gt = 0;
     for (const d of L) if ((d.kind === 'sales' || d.kind === 'credit') && d.flags.length) d.flags.forEach(f => exceptions.push({ doc: d, msg: f }));
     const totals = {
       invoices: L.filter(d => d.kind === 'sales').length,
       txval: r2(L.filter(d => d.kind === 'sales').reduce((a, d) => a + d.txval, 0) - L.filter(d => d.kind === 'credit').reduce((a, d) => a + d.txval, 0))
     };
     return { json, exceptions, totals };
+  }
+
+  // Checks the portal's upload validation is known to apply, so problems show here instead of "Error Occurred" on the portal
+  function validateGSTR1(j) {
+    const out = [];
+    const badNo = (n) => !n || String(n).length > 16 || !/^[A-Za-z0-9/-]+$/.test(String(n)) || /^[-/0]+$/.test(String(n));
+    const chkItems = (where, no, items) => (items || []).forEach(it => { const d = it.itm_det || it; if (!RATES.includes(+d.rt)) out.push(`${where} ${no}: GST rate ${d.rt}% is not a GST rate`); if (d.txval < 0) out.push(`${where} ${no}: negative taxable value`); });
+    (j.b2b || []).forEach(p => { if (!/^[0-9A-Z]{15}$/.test(p.ctin)) out.push(`B2B: GSTIN “${p.ctin}” is not valid`); p.inv.forEach(i => { if (badNo(i.inum)) out.push(`B2B invoice “${i.inum}”: invoice number must be max 16 letters/digits, “/” or “-”`); chkItems('B2B invoice', i.inum, i.itms); }); });
+    (j.b2cl || []).forEach(p => p.inv.forEach(i => { if (badNo(i.inum)) out.push(`B2CL invoice “${i.inum}”: invoice number must be max 16 letters/digits, “/” or “-”`); chkItems('B2CL invoice', i.inum, i.itms); }));
+    (j.exp || []).forEach(e => e.inv.forEach(i => { if (badNo(i.inum)) out.push(`Export invoice “${i.inum}”: invoice number must be max 16 letters/digits, “/” or “-”`); chkItems('Export invoice', i.inum, i.itms); }));
+    (j.cdnr || []).forEach(p => p.nt.forEach(n => { if (badNo(n.nt_num)) out.push(`Credit/debit note “${n.nt_num}”: number must be max 16 letters/digits, “/” or “-”`); }));
+    (j.b2cs || []).forEach(c => { if (!RATES.includes(+c.rt)) out.push(`B2CS ${c.pos}: GST rate ${c.rt}% is not a GST rate`); });
+    const h = j.hsn || {};
+    [...(h.hsn_b2b || []), ...(h.hsn_b2c || [])].forEach(x => { if (!/^\d{4,8}$/.test(x.hsn_sc)) out.push(`HSN summary: “${x.hsn_sc}” is not a valid HSN/SAC`); if (!RATES.includes(+x.rt)) out.push(`HSN ${x.hsn_sc}: rate ${x.rt}% is not a GST rate`); });
+    ((j.doc_issue || {}).doc_det || []).forEach(dd => dd.docs.forEach(x => { if (badNo(x.from) || badNo(x.to)) out.push(`Documents issued: series “${x.from}” to “${x.to}” – numbers must be max 16 letters/digits, “/” or “-”`); }));
+    return Array.from(new Set(out));
   }
 
   /* ---------- portal files → comparable documents ---------- */
@@ -397,5 +413,5 @@
     return [{ name: 'GSTR-3B working', rows, money: [1, 2, 3, 4, 5], widths: [62, 16, 14, 14, 14, 12, 46] }];
   }
 
-  root.GSTWork = { registers, buildGSTR1, parse2B, parseGSTR1, reconcile, reconSheets, threeB, threeBSheet, rateGroups, snap, r2, toIso, ddmmyyyy, normNum, looseNum };
+  root.GSTWork = { registers, buildGSTR1, validateGSTR1, parse2B, parseGSTR1, reconcile, reconSheets, threeB, threeBSheet, rateGroups, snap, r2, toIso, ddmmyyyy, normNum, looseNum };
 })(typeof window !== 'undefined' ? window : globalThis);

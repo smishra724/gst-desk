@@ -157,8 +157,9 @@
   function gstr1Html() {
     const j = st.gstr1.json;
     const cnt = (k) => (j[k] || []).reduce((a, x) => a + ((x.inv || x.nt || [x]).length), 0);
-    const ex = st.gstr1.exceptions;
-    return `<table class="tbl" style="margin-top:10px"><tbody>
+    const ex = st.gstr1.exceptions, pr = st.gstr1.problems || [];
+    return `${pr.length ? `<div class="note warn" style="margin-top:10px"><b>The GST portal would reject this file:</b><ul style="margin:6px 0 0;padding-left:18px">${pr.slice(0, 10).map(p => `<li>${esc(p)}</li>`).join('')}${pr.length > 10 ? `<li>…and ${pr.length - 10} more</li>` : ''}</ul>Correct these in Tally and read again.</div>` : ''}
+    <table class="tbl" style="margin-top:10px"><tbody>
       <tr><td>B2B invoices</td><td class="n">${cnt('b2b')}</td></tr><tr><td>B2CL invoices</td><td class="n">${cnt('b2cl')}</td></tr>
       <tr><td>Export invoices (6A EXP${(j.exp || []).length ? ': ' + (j.exp || []).map(e => `${e.exp_typ === 'WPAY' ? 'with IGST' : 'under LUT'} ${e.inv.length}`).join(', ') : ''})</td><td class="n">${cnt('exp')}</td></tr>
       <tr><td>Credit/debit notes (unregistered / export)</td><td class="n">${(j.cdnur || []).length}</td></tr>
@@ -252,6 +253,7 @@
     if (!c || !c.gstin) return App.toast('Choose the client (with its GSTIN) first');
     if (!c.portal.username) return App.toast('Save the client’s GST ID and password on the Clients tab first');
     if (st.from !== st.to) return App.toast('Upload works for one month at a time – set From and To to the same month and build the JSON again');
+    if ((st.gstr1.problems || []).length && !confirm(`The portal is likely to reject this file:\n\n${st.gstr1.problems.slice(0, 5).join('\n')}\n\nUpload anyway?`)) return;
     const [y, m] = st.from.split('-').map(Number);
     const ret = ($('#w-g1ret') && $('#w-g1ret').value) || 'GSTR1';
     const fy = m >= 4 ? `${y}-${String((y + 1) % 100).padStart(2, '0')}` : `${y - 1}-${String(y % 100).padStart(2, '0')}`;
@@ -344,6 +346,7 @@
       if (!c || !c.gstin) { App.toast('Add the client GSTIN first'); return; }
       const [y, m] = st.from.split('-');
       st.gstr1 = W.buildGSTR1(st.docs, { gstin: c.gstin, fp: `${m}${y}` });
+      st.gstr1.problems = W.validateGSTR1(st.gstr1.json);
       render();
     });
     on('#w-g1up', 'click', uploadG1);
