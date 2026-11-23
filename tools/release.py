@@ -19,7 +19,10 @@ json.dump({'version': v, 'zip': 'gst-desk.zip', 'notes': notes or old.get('notes
 with zipfile.ZipFile('docs/gst-desk.zip', 'w', zipfile.ZIP_DEFLATED) as z:
     for f in files: z.write(os.path.join('extension', f), 'gst-desk/' + f)
 # Bridge
-bv = re.search(r"\$AppVersion = '([^']+)'", open('bridge/bridge.ps1').read()).group(1)
+bv = re.search(r"\$AppVersion = '([^']+)'", open('bridge/bridge.ps1', encoding='utf-8-sig').read()).group(1)
+# bridge.ps1: UTF-8 with BOM + CRLF (Windows PowerShell 5.1 reads it right; same bytes as inside the .exe)
+_b = open('bridge/bridge.ps1', encoding='utf-8-sig', newline='').read().replace('\r\n', '\n').replace('\n', '\r\n')
+open('bridge/bridge.ps1', 'w', encoding='utf-8-sig', newline='').write(_b)
 for f in ['CA-Desk-Bridge-Setup.cmd', 'launcher.vbs']:   # Windows line endings
     t = open('bridge/' + f, newline='').read().replace('\r\n', '\n').replace('\n', '\r\n')
     open('bridge/' + f, 'w', newline='').write(t)

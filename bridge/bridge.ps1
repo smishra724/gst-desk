@@ -1,4 +1,4 @@
-# CA Desk Bridge - the desktop helper for CA Desk and GST Desk (works like a DSC utility such as WD ProxKey):
+﻿# CA Desk Bridge - the desktop helper for CA Desk and GST Desk (works like a DSC utility such as WD ProxKey):
 #  - sits in the Windows system tray and starts with Windows
 #  - keeps the CA Desk Suite browser extension up to date: "Update now" downloads the new version in the
 #    background and the extension restarts itself within a minute
@@ -10,7 +10,7 @@
 param([switch]$NoTray, [int]$Port = 47731, [string]$Root = '', [string]$Base = 'https://smishra724.github.io/gst-desk/bridge/')
 
 $ErrorActionPreference = 'Stop'
-$AppVersion = '1.3.0'
+$AppVersion = '1.3.1'
 if (-not $Root) { $Root = Split-Path -Parent $MyInvocation.MyCommand.Path }
 
 # one copy only
@@ -342,7 +342,7 @@ $miStart.add_Click({ Set-Startup (-not (Test-Path -LiteralPath $startupLnk)) })
 $miExit.add_Click({ $State.stop = $true; $icon.Visible = $false; [System.Windows.Forms.Application]::Exit() })
 $icon.add_MouseClick({ param($s, $e) if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) { Open-Desk } })
 
-$lastAvail = $false; $lastMsg = ''; $lastErr = ''; $lastBErr = ''
+$script:lastAvail = $false; $script:lastMsg = ''; $script:lastErr = ''; $script:lastBErr = ''   # script: scope - the timer handler runs in its own scope
 $timer = New-Object System.Windows.Forms.Timer; $timer.Interval = 1500
 $timer.add_Tick({
   $ev = Get-ExtVersion; $avail = Test-UpdateAvailable
@@ -355,12 +355,12 @@ $timer.add_Tick({
   $tip = "CA Desk Bridge v$AppVersion - " + $(if ($State.updating) { 'updating' } elseif ($avail) { 'update available' } else { 'up to date' })
   if ($tip.Length -gt 63) { $tip = $tip.Substring(0, 63) }
   $icon.Text = $tip
-  if ($avail -and -not $lastAvail -and -not $State.updating) { $icon.ShowBalloonTip(5000, 'CA Desk Bridge', "A new version is ready (v$(if (Test-ConnectorOnly) { $State.latest.version } else { $State.latest.extensionVersion })). Right-click the tray icon → Update now.", 'Info') }
-  $lastAvail = $avail
-  if ($State.message -and $State.message -ne $lastMsg) { $icon.ShowBalloonTip(4000, 'CA Desk Bridge', $State.message + $(if (Test-ConnectorOnly) { '.' } else { '. The extension restarts by itself within a minute.' }), 'Info'); $lastMsg = $State.message }
-  if ($State.browserError -and $State.browserError -ne $lastBErr) { $icon.ShowBalloonTip(5000, 'CA Desk Bridge', $State.browserError, 'Warning'); $lastBErr = $State.browserError }
+  if ($avail -and -not $script:lastAvail -and -not $State.updating) { $icon.ShowBalloonTip(5000, 'CA Desk Bridge', "A new version is ready (v$(if (Test-ConnectorOnly) { $State.latest.version } else { $State.latest.extensionVersion })). Right-click the tray icon → Update now.", 'Info') }
+  $script:lastAvail = $avail
+  if ($State.message -and $State.message -ne $script:lastMsg) { $icon.ShowBalloonTip(4000, 'CA Desk Bridge', $State.message + $(if (Test-ConnectorOnly) { '.' } else { '. The extension restarts by itself within a minute.' }), 'Info'); $script:lastMsg = $State.message }
+  if ($State.browserError -and $State.browserError -ne $script:lastBErr) { $icon.ShowBalloonTip(5000, 'CA Desk Bridge', $State.browserError, 'Warning'); $script:lastBErr = $State.browserError }
   if ($State.browserBusy) { $miDesk.Text = "Open CA Desk ($($State.browserProgress)…)" } else { $miDesk.Text = 'Open CA Desk' }
-  if ($State.lastError -and $State.lastError -ne $lastErr) { $icon.ShowBalloonTip(5000, 'CA Desk Bridge', $State.lastError, 'Warning'); $lastErr = $State.lastError }
+  if ($State.lastError -and $State.lastError -ne $script:lastErr) { $icon.ShowBalloonTip(5000, 'CA Desk Bridge', $State.lastError, 'Warning'); $script:lastErr = $State.lastError }
   if ($State.restart) { $timer.Stop(); $icon.Visible = $false; Restart-Self; [System.Windows.Forms.Application]::Exit() }
 })
 $timer.Start()

@@ -16,7 +16,7 @@ with open(os.path.join(d, 'script.h'), 'w') as h:
     h.write('static const unsigned char SCRIPT[] = {')
     h.write(','.join(str(b) for b in script))
     h.write('};\n#define SCRIPT_LEN %d\n' % len(script))
-bv = re.search(r"\$AppVersion = '([^']+)'", open(os.path.join(ROOT, 'bridge', 'bridge.ps1')).read()).group(1)
+bv = re.search(r"\$AppVersion = '([^']+)'", open(os.path.join(ROOT, 'bridge', 'bridge.ps1'), encoding='utf-8-sig').read()).group(1)
 a, b, c = (bv.split('.') + ['0', '0'])[:3]
 out = os.path.join(ROOT, 'bridge', 'CA-Desk-Bridge-Setup.exe')
 res = os.path.join(d, 'setup.res.o')
@@ -33,7 +33,7 @@ def crlf(path):
 B = os.path.join(ROOT, 'bridge')
 with open(os.path.join(d, 'payload.h'), 'w') as h:
     h.write(carr('BOOT', crlf(os.path.join(d, 'connector.ps1'))))
-    h.write(carr('BRIDGE', crlf(os.path.join(B, 'bridge.ps1'))))
+    h.write(carr('BRIDGE', open(os.path.join(B, 'bridge.ps1'), 'rb').read()))   # exactly the bytes the website serves (BOM + CRLF)
     h.write(carr('LAUNCHER', open(os.path.join(B, 'launcher.vbs'), 'rb').read()))
     h.write(carr('ICON', open(os.path.join(B, 'icon.ico'), 'rb').read()))
 out = os.path.join(B, 'CA-Desk-Bridge.exe')

@@ -41,7 +41,7 @@ int WINAPI wWinMain(HINSTANCE h, HINSTANCE prev, PWSTR args, int show) {
   GetTempPathW(MAX_PATH, tmp);
   swprintf(dir, MAX_PATH * 2, L"%lsCADeskConnector-%lu", tmp, GetCurrentProcessId());
   CreateDirectoryW(dir, NULL);
-  if (!put(dir, L"connector.ps1", BOOT, BOOT_LEN, 1) || !put(dir, L"bridge.ps1", BRIDGE, BRIDGE_LEN, 1) ||
+  if (!put(dir, L"connector.ps1", BOOT, BOOT_LEN, 1) || !put(dir, L"bridge.ps1", BRIDGE, BRIDGE_LEN, 0) ||
       !put(dir, L"launcher.vbs", LAUNCHER, LAUNCHER_LEN, 0) || !put(dir, L"icon.ico", ICON, ICON_LEN, 0)) {
     MessageBoxW(NULL, L"Could not write to the TEMP folder.", L"CA Desk Bridge", MB_ICONWARNING);
     rmtree(dir); return 1;
