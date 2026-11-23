@@ -1,3 +1,7 @@
+CA DESK SUITE = GST Desk + CA Desk portal helper (formerly the separate "CA Desk Helper").
+One extension: portal login autofill, Tally link, GSTR-1 autopilot, filing-frequency check,
+plus GST Desk. If the old CA Desk Helper is still installed, remove it in chrome://extensions.
+
 GST DESK – Chrome extension (v2)
 ================================
 Client master · GST registration filling · Bulk GSTR-1 / 2B / 3B downloads ·

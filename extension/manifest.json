@@ -1,24 +1,25 @@
 {
   "manifest_version": 3,
-  "name": "GST Desk \u2013 Registration, Returns & Tally",
-  "version": "2.9.0",
-  "description": "Client master with encrypted portal logins, GST registration filling, bulk GSTR-1/2B/3B downloads, Tally import, GSTR-1 JSON, 3B working and reconciliation.",
+  "name": "CA Desk Suite \u2013 GST Desk & Portal Helper",
+  "version": "3.0.0",
+  "description": "GST Desk (client master, GST registration filling, bulk GSTR-1/2B/3B downloads, Tally GST work) plus the CA Desk portal helper: login autofill, Tally link, GSTR-1 autopilot and filing-frequency checks. You type every CAPTCHA/OTP.",
   "permissions": [
-    "storage",
     "downloads",
+    "nativeMessaging",
+    "storage",
     "unlimitedStorage"
   ],
   "host_permissions": [
-    "https://*.gst.gov.in/*",
-    "http://localhost/*",
     "http://127.0.0.1/*",
+    "http://localhost/*",
+    "https://*.gst.gov.in/*",
     "https://smishra724.github.io/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "GST Desk",
+    "default_title": "GST Desk (CA Desk Suite)",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -67,6 +68,63 @@
         "bridge.js"
       ],
       "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://smishra724.github.io/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": [
+        "cad-bridge.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://*.gst.gov.in/*",
+        "https://ewaybillgst.gov.in/*",
+        "https://*.incometax.gov.in/*",
+        "https://www.tdscpc.gov.in/*",
+        "https://*.mca.gov.in/*",
+        "https://*.epfindia.gov.in/*",
+        "https://*.esic.gov.in/*",
+        "https://udyamregistration.gov.in/*",
+        "https://*.dgft.gov.in/*"
+      ],
+      "js": [
+        "fill.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://*.gst.gov.in/*"
+      ],
+      "js": [
+        "gstauto.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://return.gst.gov.in/*"
+      ],
+      "js": [
+        "cad-hook.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://services.gst.gov.in/services/searchtp*"
+      ],
+      "js": [
+        "freq.js"
+      ],
+      "run_at": "document_idle"
     }
   ],
   "minimum_chrome_version": "111",
@@ -79,5 +137,6 @@
         "https://smishra724.github.io/*"
       ]
     }
-  ]
+  ],
+  "short_name": "CA Desk Suite"
 }

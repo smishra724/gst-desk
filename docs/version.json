@@ -1,6 +1,6 @@
 {
-  "version": "2.9.0",
+  "version": "3.0.0",
   "zip": "gst-desk.zip",
-  "notes": "CA Desk Masters and GST Desk clients are linked both ways: clients and GST logins stay in step automatically.",
+  "notes": "CA Desk Suite: GST Desk and the CA Desk portal helper are now one extension.",
   "storeUrl": ""
 }

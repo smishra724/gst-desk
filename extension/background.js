@@ -1,6 +1,6 @@
 /* Service worker: opens the manager, hands saved logins to the portal runner,
    and names downloaded return files into GST Desk/<Client>/<FY>/ folders. */
-importScripts('schema.js', 'vault.js');
+importScripts('schema.js', 'vault.js', 'cad-background.js');   // cad-background.js = CA Desk portal helper (CAPM_* messages)
 const G = self.GSTR;
 const K = G.KEYS;
 const EXPECT = 'gstf_expect';
@@ -12,6 +12,7 @@ const fyOf = (period) => { const [y, m] = period.split('-').map(Number); return 
 const mmyyyy = (period) => { const [y, m] = period.split('-'); return `${m}${y}`; };
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (msg && typeof msg.type === 'string' && msg.type.startsWith('CAPM_')) return false;   // handled by cad-background.js
   (async () => {
     if (!msg || !msg.type) return reply({});
     if (msg.type === 'open-manager') {
