@@ -1,6 +1,6 @@
 {
-  "version": "3.0.1",
+  "version": "3.0.2",
   "zip": "gst-desk.zip",
-  "notes": "Tally & GST work reads export sales (custom voucher types, foreign currency) and puts them in GSTR-1 Table 6A (EXP); SEZ sales go to B2B as SEZ invoices.",
+  "notes": "Quieter restart after updates (no errors from open CA Desk tabs).",
   "storeUrl": ""
 }
