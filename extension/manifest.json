@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CA Desk Suite \u2013 GST Desk & Portal Helper",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "GST Desk (client master, GST registration filling, bulk GSTR-1/2B/3B downloads, Tally GST work) plus the CA Desk portal helper: login autofill, Tally link, GSTR-1 autopilot and filing-frequency checks. You type every CAPTCHA/OTP.",
   "permissions": [
     "downloads",

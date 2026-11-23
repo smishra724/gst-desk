@@ -44,7 +44,8 @@
   const txt = (el, tag) => { const k = kid(el, tag); return k ? k.textContent.trim() : ''; };
   const deep = (el, tag) => { const all = el ? el.getElementsByTagName(tag) : []; for (const n of all) { const t = n.textContent.trim(); if (t) return t; } return ''; };
   const yes = (v) => /^yes$/i.test(String(v || '').trim());
-  const num = (v) => { const n = parseFloat(String(v || '').replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : 0; };
+  const num = (v) => { let s = String(v || ''); if (s.includes('=')) s = s.slice(s.lastIndexOf('=') + 1); const n = parseFloat(s.replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : 0; };   // forex amounts: take the ₹ value after "="
+  const isForex = (v) => /@|=/.test(String(v || ''));
   const nameOf = (el) => el.getAttribute('NAME') || txt(el, 'NAME') || deep(kid(el, 'LANGUAGENAME.LIST'), 'NAME');
   const r2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
   const tDate = (s) => { const m = /^(\d{4})(\d{2})(\d{2})/.exec(s || ''); return m ? `${m[1]}-${m[2]}-${m[3]}` : ''; };
@@ -60,6 +61,12 @@
 <REPORTNAME>List of Accounts</REPORTNAME><STATICVARIABLES><SVCURRENTCOMPANY>${xesc(company)}</SVCURRENTCOMPANY>
 <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><ACCOUNTTYPE>All Masters</ACCOUNTTYPE></STATICVARIABLES>
 </REQUESTDESC></EXPORTDATA></BODY></ENVELOPE>`;
+
+  // voucher types with their parent, so "Export Sales", "Tax Invoice" etc. are known to be Sales
+  const reqVTypes = (company) => `<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>GSTDeskVchTypes</ID></HEADER>
+<BODY><DESC><STATICVARIABLES><SVCURRENTCOMPANY>${xesc(company)}</SVCURRENTCOMPANY><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT></STATICVARIABLES>
+<TDL><TDLMESSAGE><COLLECTION NAME="GSTDeskVchTypes" ISMODIFY="No"><TYPE>VoucherType</TYPE><FETCH>NAME, PARENT</FETCH></COLLECTION></TDLMESSAGE></TDL>
+</DESC></BODY></ENVELOPE>`;
 
   const reqVouchers = (company, from, to) => `<ENVELOPE><HEADER><TALLYREQUEST>Export Data</TALLYREQUEST></HEADER><BODY><EXPORTDATA><REQUESTDESC>
 <REPORTNAME>Day Book</REPORTNAME><STATICVARIABLES><SVCURRENTCOMPANY>${xesc(company)}</SVCURRENTCOMPANY>
@@ -101,7 +108,9 @@
         state: txt(l, 'LEDSTATENAME') || deep(kid(l, 'LEDMAILINGDETAILS.LIST'), 'STATE') || txt(l, 'STATENAME') || deep(lastReg, 'STATE'),
         country: txt(l, 'COUNTRYOFRESIDENCE') || deep(kid(l, 'LEDMAILINGDETAILS.LIST'), 'COUNTRY'),
         duty: DUTY(txt(l, 'GSTDUTYHEAD')),
-        taxType: txt(l, 'TAXTYPE')
+        taxType: txt(l, 'TAXTYPE'),
+        currency: txt(l, 'CURRENCYNAME'),
+        nature: txt(l, 'GSTNATUREOFSUPPLY') + ' ' + txt(l, 'GSTTYPEOFSUPPLY')
       };
     }
     for (const s of doc.getElementsByTagName('STOCKITEM')) {
@@ -135,6 +144,12 @@
       if (!p || p === t) break;
       t = p;
     }
+    // type not found among the masters: go by its name ("Export Sales", "Sales - Export", "Tax Invoice", "Export Invoice")
+    const n = String(vt || '').toLowerCase();
+    if (/credit\s*note/.test(n)) return 'credit note';
+    if (/debit\s*note/.test(n)) return 'debit note';
+    if (/purchase/.test(n)) return 'purchase';
+    if (/sales?\b|invoice|export/.test(n) && !/order|delivery|quotation|proforma|receipt note/.test(n)) return 'sales';
     return String(t || vt || '').toLowerCase();
   }
 
@@ -142,6 +157,7 @@
   function toDocs(doc, m, opts) {
     const own = opts.ownStateCode || '';
     const out = [];
+    const stats = opts.stats || { seen: 0, skipped: {} };
     for (const v of doc.getElementsByTagName('VOUCHER')) {
       if (yes(txt(v, 'ISCANCELLED')) || yes(txt(v, 'ISOPTIONAL')) || yes(txt(v, 'ISDELETED'))) {
         const vt0 = txt(v, 'VOUCHERTYPENAME') || v.getAttribute('VCHTYPE') || '';
@@ -152,7 +168,8 @@
       const vt = txt(v, 'VOUCHERTYPENAME') || v.getAttribute('VCHTYPE') || '';
       const base = baseType(m, vt);
       const kind = base === 'sales' ? 'sales' : base === 'purchase' ? 'purchase' : base === 'credit note' ? 'credit' : base === 'debit note' ? 'debit' : '';
-      if (!kind) continue;
+      stats.seen++;
+      if (!kind) { stats.skipped[vt] = (stats.skipped[vt] || 0) + 1; continue; }
       const party = txt(v, 'PARTYLEDGERNAME') || txt(v, 'PARTYNAME');
       const pl = m.ledgers[party] || {};
       const led = kids(v, 'ALLLEDGERENTRIES.LIST').length ? kids(v, 'ALLLEDGERENTRIES.LIST') : kids(v, 'LEDGERENTRIES.LIST');
@@ -164,7 +181,14 @@
       d.pos = G.stateCode(posName) || (d.gstin ? d.gstin.slice(0, 2) : '') || own;
       d.rcm = ['ISREVERSECHARGEAPPLICABLE', 'REVERSECHARGE', 'ISRCMAPPLICABLE'].some(t => yes(txt(v, t)));
       const country = txt(v, 'COUNTRYOFRESIDENCE') || pl.country;
-      d.export = /sez|overseas|export|deemed/i.test(d.regType) || (country && !/^india$/i.test(country));
+      // Export / SEZ / deemed export: registration type, nature of transaction, country, place of supply, foreign-currency amounts
+      const nature = [deep(v, 'GSTOVRDNNATURE'), deep(v, 'GSTNATUREOFTRANSACTION'), deep(v, 'NATUREOFTRANSACTION'), txt(v, 'VCHGSTCLASS'), pl.nature].join(' ');
+      const forex = led.some(e => isForex(txt(e, 'AMOUNT'))) || (pl.currency && !/^(₹|rs\.?|inr|rupees?)$/i.test(pl.currency.trim()));
+      d.sez = /sez/i.test(d.regType + ' ' + nature);
+      d.deemed = /deemed/i.test(d.regType + ' ' + nature);
+      d.export = d.sez || d.deemed || /overseas|export/i.test(d.regType + ' ' + nature + ' ' + vt) || (!!country && !/^india$/i.test(country)) ||
+        /other territory|outside india|foreign|overseas/i.test(posName || '') || (!!forex && !d.gstin);
+      if (d.export && !d.gstin && !d.sez && !d.deemed) d.pos = '96';
       let partyAmt = 0;
       for (const e of led) {
         const ln = txt(e, 'LEDGERNAME');
@@ -198,6 +222,7 @@
       d.effRate = d.txval ? r2(tax / d.txval * 100) : 0;
       d.interState = d.igst > 0 || (!!d.pos && !!own && d.pos !== own && !(d.cgst + d.sgst));
       if (!d.gstin && kind !== 'sales' && kind !== 'credit' && tax > 0 && !d.rcm) d.flags.push('Supplier GSTIN missing in Tally');
+      if (d.export) d.expType = d.igst > 0 ? 'WPAY' : 'WOPAY';
       out.push(d);
     }
     return out;
@@ -217,12 +242,17 @@
       async masters(company) {
         if (masters && masterCompany === company) return masters;
         masters = parseMasters(parseXml(await post(url, reqMasters(company))));
+        try {   // voucher types and their parents (not always part of "All Masters")
+          const vd = parseXml(await post(url, reqVTypes(company)));
+          for (const v of vd.getElementsByTagName('VOUCHERTYPE')) { const n = nameOf(v); const p = txt(v, 'PARENT'); if (n && p && !masters.vtypes[n]) masters.vtypes[n] = p; }
+        } catch (_) { /* older Tally: names are used instead */ }
         masterCompany = company;
         return masters;
       },
       // from/to: yyyy-mm-dd. Pulled month by month to keep Tally responsive.
       async documents(company, from, to, opts = {}, onProgress) {
         const m = await this.masters(company);
+        opts.stats = opts.stats || { seen: 0, skipped: {} };
         const docs = [];
         let cur = new Date(from + 'T00:00:00');
         const end = new Date(to + 'T00:00:00');

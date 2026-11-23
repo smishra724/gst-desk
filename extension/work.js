@@ -155,6 +155,8 @@
     const ex = st.gstr1.exceptions;
     return `<table class="tbl" style="margin-top:10px"><tbody>
       <tr><td>B2B invoices</td><td class="n">${cnt('b2b')}</td></tr><tr><td>B2CL invoices</td><td class="n">${cnt('b2cl')}</td></tr>
+      <tr><td>Export invoices (6A EXP${(j.exp || []).length ? ': ' + (j.exp || []).map(e => `${e.exp_typ === 'WPAY' ? 'with IGST' : 'under LUT'} ${e.inv.length}`).join(', ') : ''})</td><td class="n">${cnt('exp')}</td></tr>
+      <tr><td>Credit/debit notes (unregistered / export)</td><td class="n">${(j.cdnur || []).length}</td></tr>
       <tr><td>B2CS rows</td><td class="n">${(j.b2cs || []).length}</td></tr><tr><td>Credit/debit notes (registered)</td><td class="n">${cnt('cdnr')}</td></tr>
       <tr><td>HSN rows (B2B / B2C)</td><td class="n">${j.hsn.hsn_b2b.length} / ${j.hsn.hsn_b2c.length}</td></tr>
       <tr class="sum"><td>Net taxable value</td><td class="n">₹${inr(st.gstr1.totals.txval)}</td></tr></tbody></table>
@@ -203,9 +205,14 @@
     render();
     try {
       const t = GSTTally.Tally(st.port);
-      st.docs = await t.documents(st.company, `${st.from}-01`, monthEnd(st.to), { ownStateCode: (c && c.gstin || '').slice(0, 2) },
+      const stats = { seen: 0, skipped: {} };
+      st.docs = await t.documents(st.company, `${st.from}-01`, monthEnd(st.to), { ownStateCode: (c && c.gstin || '').slice(0, 2), stats },
         (msg) => { st.status = msg; const n = $('#work .note'); if (n) n.textContent = msg; });
-      st.status = `Read ${st.docs.filter(d => !d.cancelled).length} GST vouchers from “${st.company}” (${st.from} to ${st.to}).`;
+      const live = st.docs.filter(d => !d.cancelled), ex = live.filter(d => d.export && d.kind === 'sales').length;
+      const other = Object.entries(stats.skipped).filter(([t]) => !/^(receipt|payment|contra|journal|memorandum|reversing journal|physical stock|stock journal|delivery note|receipt note|rejections? (in|out)|sales order|purchase order|job work.*|material (in|out))$/i.test(t));
+      st.status = `Read ${live.length} GST vouchers from “${st.company}” (${st.from} to ${st.to})${ex ? ` – including ${ex} export/SEZ invoice${ex > 1 ? 's' : ''}` : ''}. Tally sent ${stats.seen} vouchers in all.` +
+        (other.length ? ` Not read as sales/purchase: ${other.map(([t, n]) => `“${t}” (${n})`).join(', ')} – tell GST Desk if one of these is a sales or purchase type.` : '') +
+        (!stats.seen ? ' Tally sent no vouchers for these months – check the From/To months and that the company has entries in that period.' : '');
       if (c && c.tally.company !== st.company) { c.tally.company = st.company; App.saveProfiles(); }
     } catch (e) { st.error = e.message; st.status = ''; }
     render();

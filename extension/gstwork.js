@@ -63,7 +63,18 @@
     const own = (gstin || '').slice(0, 2);
     const L = live(docs);
     const exceptions = [];
-    const json = { gstin, fp, version: version || 'GST2.2', hash: 'hash', b2b: [], b2cl: [], b2cs: [], cdnr: [], cdnur: [], hsn: { hsn_b2b: [], hsn_b2c: [] }, doc_issue: { doc_det: [] } };
+    const json = { gstin, fp, version: version || 'GST2.2', hash: 'hash', b2b: [], b2cl: [], exp: [], b2cs: [], cdnr: [], cdnur: [], hsn: { hsn_b2b: [], hsn_b2c: [] }, doc_issue: { doc_det: [] } };
+    const expMap = new Map();
+    // rate of an export line: from the items (LUT exports carry no tax, so the effective rate would be 0)
+    const expGroups = (d) => {
+      const withRate = d.lines.filter(l => l.rate !== null && l.rate !== undefined);
+      if (withRate.length && !d.igst) {
+        const by = new Map(); const tot = d.lines.reduce((a, l) => a + l.value, 0) || 1;
+        d.lines.forEach(l => { const rt = snap(l.rate ?? 0); by.set(rt, r2((by.get(rt) || 0) + d.txval * l.value / tot)); });
+        return Array.from(by, ([rt, txval]) => ({ rt, txval, igst: 0, cess: 0 }));
+      }
+      return rateGroups(d);
+    };
     const b2bMap = new Map(), b2clMap = new Map(), b2csMap = new Map(), cdnrMap = new Map();
     const hsnMap = { b2b: new Map(), b2c: new Map() };
 
@@ -87,7 +98,31 @@
 
     for (const d of L) {
       if (d.kind !== 'sales' && d.kind !== 'credit') continue;
-      if (d.export) { exceptions.push({ doc: d, msg: 'Export / SEZ / deemed export – enter in EXP/SEZ tables yourself' }); continue; }
+      if (d.export) {
+        const groups = expGroups(d);
+        const wp = d.igst > 0;
+        if (d.gstin) {   // SEZ unit / deemed export → B2B with the SEZ / DE invoice type
+          if (d.kind === 'sales') {
+            const p = b2bMap.get(d.gstin) || { ctin: d.gstin, inv: [] };
+            p.inv.push({ inum: d.number, idt: ddmmyyyy(d.date), val: d.total, pos: d.gstin.slice(0, 2), rchrg: 'N', inv_typ: d.deemed ? 'DE' : wp ? 'SEWP' : 'SEWOP', itms: groups.map(itm) });
+            b2bMap.set(d.gstin, p);
+          } else {
+            const p = cdnrMap.get(d.gstin) || { ctin: d.gstin, nt: [] };
+            p.nt.push({ ntty: 'C', nt_num: d.number, nt_dt: ddmmyyyy(d.date), val: d.total, pos: d.gstin.slice(0, 2), rchrg: 'N', inv_typ: d.deemed ? 'DE' : wp ? 'SEWP' : 'SEWOP', itms: groups.map(itm) });
+            cdnrMap.set(d.gstin, p);
+          }
+        } else if (d.kind === 'sales') {   // export of goods / services → Table 6A (EXP)
+          const t = wp ? 'WPAY' : 'WOPAY';
+          const e = expMap.get(t) || { exp_typ: t, inv: [] };
+          e.inv.push({ inum: d.number, idt: ddmmyyyy(d.date), val: d.total, itms: groups.map(g2 => ({ txval: g2.txval, rt: g2.rt, iamt: g2.igst, csamt: g2.cess })) });
+          expMap.set(t, e);
+          if (d.lines.length) exceptions.push({ doc: d, msg: 'Export of goods: add shipping bill number, date and port code on the portal (not in Tally)', info: true });
+        } else {   // credit note on an export → CDNUR EXPWP / EXPWOP
+          json.cdnur.push({ typ: wp ? 'EXPWP' : 'EXPWOP', ntty: 'C', nt_num: d.number, nt_dt: ddmmyyyy(d.date), val: d.total, itms: groups.map(g2 => ({ num: 0, itm_det: { txval: g2.txval, rt: g2.rt, iamt: g2.igst, csamt: g2.cess } })).map((x, i) => ({ ...x, num: i + 1 })) });
+        }
+        addHsn(d, d.kind === 'sales' ? 1 : -1);
+        continue;
+      }
       const groups = rateGroups(d);
       const inter = d.pos !== own;
       if (d.kind === 'sales') {
@@ -128,6 +163,7 @@
     }
     json.b2b = Array.from(b2bMap.values());
     json.b2cl = Array.from(b2clMap.values());
+    json.exp = Array.from(expMap.values());
     json.b2cs = Array.from(b2csMap.values()).filter(c => c.txval || c.iamt || c.camt);
     json.cdnr = Array.from(cdnrMap.values());
     json.b2cs.forEach(c => { if (c.sply_ty === 'INTER') { delete c.camt; delete c.samt; } else delete c.iamt; });
@@ -156,7 +192,7 @@
     if (inv.length) json.doc_issue.doc_det.push({ doc_num: 1, docs: inv.map((d, i) => ({ num: i + 1, ...d })) });
     if (cn.length) json.doc_issue.doc_det.push({ doc_num: 5, docs: cn.map((d, i) => ({ num: i + 1, ...d })) });
 
-    for (const k of ['b2b', 'b2cl', 'b2cs', 'cdnr', 'cdnur']) if (!json[k].length) delete json[k];
+    for (const k of ['b2b', 'b2cl', 'exp', 'b2cs', 'cdnr', 'cdnur']) if (!json[k].length) delete json[k];
     for (const d of L) if ((d.kind === 'sales' || d.kind === 'credit') && d.flags.length) d.flags.forEach(f => exceptions.push({ doc: d, msg: f }));
     const totals = {
       invoices: L.filter(d => d.kind === 'sales').length,
