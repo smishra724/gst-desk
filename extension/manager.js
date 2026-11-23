@@ -292,7 +292,7 @@
         ${fld('status', 'This client is', { span: 6, type: 'seg', options: [['registered', 'Already registered (has GSTIN)'], ['new', 'Applying for new registration']] })}
       </div></div></section>
 
-      <section class="card"><header><h3><span class="step">2</span>GST ID, password &amp; Tally</h3><span class="hint">Used to import details, download returns and for Tally</span></header><div class="body"><div class="grid">
+      <section class="card"><header><h3><span class="step">2</span>GST ID, password &amp; Tally</h3><span class="hint">${p.caDesk && p.caDesk.cid ? '<span class="pill ok" title="Kept in step with the client master in CA Desk">🔗 Linked to CA Desk</span>' : '<a href="https://smishra724.github.io/ca-desk/#gstdesk" target="_blank" title="Open CA Desk → GST Desk to add or link this client">Not linked to CA Desk</a>'}</span></header><div class="body"><div class="grid">
         ${fld('gstin', 'GSTIN', { span: 4, upper: true, maxlength: 15, req: p.status === 'registered', placeholder: '27AABCS1234K1Z5' })}
         ${fld('portal.username', 'GST ID (portal username)', { span: 4, req: p.status === 'registered', placeholder: 'User ID used on gst.gov.in' })}
         <div class="f s4" data-wrap="portal.password"><label for="pw">GST password</label>
@@ -651,6 +651,7 @@
     const v = el.value;
     if (!v || !(await App.ensureUnlocked())) return;
     p.portal.passwordEnc = await GSTVault.encrypt(v);
+    p.portal.changedAt = new Date().toISOString();
     queueSave();
     el.placeholder = '•••••••• saved';
     const help = el.closest('.f') && el.closest('.f').querySelector('.help');
@@ -690,7 +691,7 @@
   /* ---------- import a registered client's details from the GST portal ---------- */
   async function startImport(p) {
     const typed = $('#pw') && $('#pw').value;
-    if (typed) { if (!(await App.ensureUnlocked())) return; p.portal.passwordEnc = await GSTVault.encrypt(typed); $('#pw').value = ''; queueSave(); }
+    if (typed) { if (!(await App.ensureUnlocked())) return; p.portal.passwordEnc = await GSTVault.encrypt(typed); p.portal.changedAt = new Date().toISOString(); $('#pw').value = ''; queueSave(); }
     if (!p.portal.username) { toast('Enter the GST ID (portal username) first'); const i = $('[data-path="portal.username"]'); if (i) i.focus(); return; }
     if (p.portal.passwordEnc && !(await App.ensureUnlocked())) return;
     clearTimeout(saveTimer); await store.save();
@@ -821,6 +822,7 @@
       if (!val) { if (!p.portal.passwordEnc) toast('Type the password first'); return; }
       if (!(await App.ensureUnlocked())) return;
       p.portal.passwordEnc = await GSTVault.encrypt(val);
+      p.portal.changedAt = new Date().toISOString();
       queueSave(); renderEditor(); toast('Password saved (encrypted)');
       return;
     }
@@ -902,6 +904,7 @@
       setPath(p, path, v); queueSave(); renderEditor(); return;
     }
     setPath(p, path, v);
+    if (path === 'portal.username') p.portal.changedAt = new Date().toISOString();
     if (path === 'business.commissionerate') { p.business.division = ''; p.business.range = ''; }
     if (path === 'business.division') p.business.range = '';
     queueSave();
@@ -1101,6 +1104,7 @@
         if (JSON.stringify(np.portal.passwordEnc) !== JSON.stringify(op.portal.passwordEnc) || (!op.portal.username && np.portal.username)) {
           op.portal.passwordEnc = np.portal.passwordEnc;
           if (!op.portal.username) op.portal.username = np.portal.username;
+          op.portal.changedAt = np.portal.changedAt;
           if (op.id === currentId) hit = true;
         }
         if (np.trn && !op.trn) op.trn = np.trn;

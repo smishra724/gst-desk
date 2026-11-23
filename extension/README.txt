@@ -74,5 +74,9 @@ GOOD TO KNOW
 
 
 WITH CA DESK
-- CA Desk → GST Desk page: set up / update GST Desk with one click, send clients
-  (GSTIN + GST login) to GST Desk, and open a client in GST Desk.
+- CA Desk → GST Desk page: set up / update GST Desk with one click, and open a client
+  in GST Desk.
+- Masters and GST Desk clients are linked: every CA Desk client with a GSTIN comes to
+  GST Desk automatically (with its GST login), and a GST ID/password changed in GST Desk
+  (or typed on the GST portal) goes back to the CA Desk master. The newer one wins.
+  Clients only in GST Desk are listed in CA Desk to add to Masters or link.

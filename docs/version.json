@@ -1,6 +1,6 @@
 {
-  "version": "2.8.5",
+  "version": "2.9.0",
   "zip": "gst-desk.zip",
-  "notes": "Tally & GST work: link a Tally company to an existing client (best match suggested), or fetch it from CA Desk in one click.",
+  "notes": "CA Desk Masters and GST Desk clients are linked both ways: clients and GST logins stay in step automatically.",
   "storeUrl": ""
 }

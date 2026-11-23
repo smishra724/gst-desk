@@ -1,5 +1,5 @@
 /* Bridge for the GST Desk web dashboard (smishra724.github.io/gst-desk) and CA Desk (smishra724.github.io/ca-desk).
-   Answers the page with a read-only summary (passwords are never shared back), opens GST Desk,
+   Answers the page with a summary, opens GST Desk, shares clients + GST logins with CA Desk (same site only),
    takes clients sent from CA Desk, and restarts itself after CA Desk has written an update. */
 (function () {
   'use strict';
@@ -40,6 +40,10 @@
       }
       else if (action === 'sync-clients') {
         const r = await new Promise(res => chrome.runtime.sendMessage({ type: 'import-clients', clients: e.data.clients || [], replacePasswords: !!e.data.replacePasswords }, x => { void chrome.runtime.lastError; res(x || { error: 'GST Desk did not answer' }); }));
+        post({ id, ok: !r.error, data: r, error: r.error });
+      }
+      else if (action === 'export-clients') {
+        const r = await new Promise(res => chrome.runtime.sendMessage({ type: 'export-clients' }, x => { void chrome.runtime.lastError; res(x || { error: 'GST Desk did not answer' }); }));
         post({ id, ok: !r.error, data: r, error: r.error });
       }
       else if (action === 'reload') { post({ id, ok: true }); setTimeout(() => chrome.runtime.sendMessage({ type: 'reload-self' }, () => void chrome.runtime.lastError), 150); }

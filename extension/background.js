@@ -73,13 +73,14 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         if ((await self.GSTVault.state()) === 'none') await self.GSTVault.setupAuto();
         try { p.portal.passwordEnc = await self.GSTVault.encrypt(t.password); changed = true; } catch (_) { return reply({ error: 'locked' }); }
       }
-      if (changed) { p.updated = new Date().toISOString(); await chrome.storage.local.set({ [K.profiles]: list }); }
+      if (changed) { p.updated = new Date().toISOString(); p.portal.changedAt = p.updated; await chrome.storage.local.set({ [K.profiles]: list }); }
       return reply({ saved: changed });
     }
     // Clients sent from CA Desk (one GST Desk client per GSTIN). Existing details are kept; blanks are filled.
-    if (msg.type === 'import-clients' || msg.type === 'reload-self') {
+    if (msg.type === 'import-clients' || msg.type === 'reload-self' || msg.type === 'export-clients') {
       const from = sender && sender.url ? new URL(sender.url) : null;
       if (!from || from.hostname !== 'smishra724.github.io') return reply({ error: 'not allowed' });
+      if (msg.type === 'export-clients') return reply(await exportClients());
       if (msg.type === 'reload-self') { reply({ ok: true }); setTimeout(() => chrome.runtime.reload(), 100); return; }
       return reply(await importClients(msg.clients || [], !!msg.replacePasswords));
     }
@@ -154,6 +155,7 @@ async function importClients(list, replacePasswords) {
   if ((await self.GSTVault.state()) === 'none') await self.GSTVault.setupAuto();
   const canEncrypt = (await self.GSTVault.state()) === 'unlocked';
   const out = { added: 0, updated: 0, unchanged: 0, passwords: 0, locked: 0, skipped: 0, ids: {} };
+  let anyLinked = false;
   for (const c of list) {
     const gstin = String(c.gstin || '').toUpperCase().replace(/\s/g, '');
     if (!/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(gstin)) { out.skipped++; continue; }
@@ -170,20 +172,40 @@ async function importClients(list, replacePasswords) {
     fill(p.partA, 'email', c.email);
     if (c.mobile && /^[6-9]\d{9}$/.test(String(c.mobile).replace(/\D/g, '').slice(-10))) fill(p.partA, 'mobile', String(c.mobile).replace(/\D/g, '').slice(-10));
     fill(p.tally, 'company', c.tallyCompany);
-    p.caDesk = { cid: c.cid || '', at: new Date().toISOString() };
-    if (c.username && (!p.portal.username || replacePasswords)) p.portal.username = String(c.username).trim();
-    if (c.password && (!p.portal.passwordEnc || replacePasswords)) {
+    // GST login: CA Desk's copy wins when it was saved later than GST Desk's (or GST Desk has none)
+    const gdAt = Date.parse(p.portal.changedAt || '') || 0;
+    const caNewer = !!c.credAt && c.credAt > gdAt + 1000;
+    let credChanged = false;
+    if (c.username && (!p.portal.username || replacePasswords || caNewer) && p.portal.username !== String(c.username).trim()) { p.portal.username = String(c.username).trim(); credChanged = true; }
+    if (c.password && (!p.portal.passwordEnc || replacePasswords || caNewer)) {
       if (!canEncrypt) out.locked++;
       else {
         let cur = null; try { cur = await self.GSTVault.decrypt(p.portal.passwordEnc); } catch (_) { cur = null; }
-        if (cur !== c.password) { p.portal.passwordEnc = await self.GSTVault.encrypt(String(c.password)); out.passwords++; }
+        if (cur !== c.password) { p.portal.passwordEnc = await self.GSTVault.encrypt(String(c.password)); out.passwords++; credChanged = true; }
       }
     }
+    if (credChanged) p.portal.changedAt = new Date(c.credAt || Date.now()).toISOString();
     const changed = JSON.stringify({ ...p, caDesk: null }) !== JSON.stringify({ ...JSON.parse(before), caDesk: null });
+    if (isNew || changed || !p.caDesk || p.caDesk.cid !== (c.cid || '')) { p.caDesk = { cid: c.cid || '', at: new Date().toISOString() }; anyLinked = true; }
     if (isNew) out.added++; else if (changed) out.updated++; else out.unchanged++;
     if (isNew || changed) p.updated = new Date().toISOString();
     out.ids[gstin] = p.id;
   }
-  await chrome.storage.local.set({ [K.profiles]: profiles });
+  if (out.added || out.updated || out.passwords || anyLinked) await chrome.storage.local.set({ [K.profiles]: profiles });   // no write (and no "changed" ping) when nothing changed
   return out;
+}
+
+// For CA Desk (smishra724.github.io only): GST Desk clients with their GST login, so CA Desk can keep its masters in step.
+async function exportClients() {
+  const r = await chrome.storage.local.get(K.profiles);
+  const unlocked = (await self.GSTVault.state()) === 'unlocked';
+  const out = [];
+  for (const p of (r[K.profiles] || []).map(G.normalizeProfile)) {
+    let password = '';
+    if (unlocked && p.portal.passwordEnc) { try { password = await self.GSTVault.decrypt(p.portal.passwordEnc); } catch (_) { password = ''; } }
+    out.push({ id: p.id, gstin: p.gstin, name: G.displayName(p), legalName: p.partA.legalName, tradeName: p.business.tradeName, pan: p.partA.pan || (p.gstin || '').slice(2, 12),
+      constitution: G.CONSTITUTIONS[p.constitution].label, status: p.status, email: p.partA.email, mobile: p.partA.mobile,
+      username: p.portal.username || '', password, changedAt: p.portal.changedAt || '', tallyCompany: p.tally.company || '', caCid: (p.caDesk && p.caDesk.cid) || '' });
+  }
+  return { clients: out, locked: !unlocked };
 }
