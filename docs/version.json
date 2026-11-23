@@ -1,6 +1,6 @@
 {
-  "version": "3.1.0",
+  "version": "3.1.1",
   "zip": "gst-desk.zip",
-  "notes": "Tally: vouchers fetched another way when the Day Book comes back empty; 'Save Tally reply' for support. GSTR-1 JSON can be uploaded to the GST portal by the autopilot from Tally & GST work.",
+  "notes": "Export sales also recognised from the sales ledger name (Export Sales, Export of Services, Zero rated, LUT).",
   "storeUrl": ""
 }

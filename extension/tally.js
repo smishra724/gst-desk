@@ -196,7 +196,9 @@
       const forex = led.some(e => isForex(txt(e, 'AMOUNT'))) || (pl.currency && !/^(₹|rs\.?|inr|rupees?)$/i.test(pl.currency.trim()));
       d.sez = /sez/i.test(d.regType + ' ' + nature);
       d.deemed = /deemed/i.test(d.regType + ' ' + nature);
-      d.export = d.sez || d.deemed || /overseas|export/i.test(d.regType + ' ' + nature + ' ' + vt) || (!!country && !/^india$/i.test(country)) ||
+      // the income ledger often says it: "Export Sales", "Export of Services", "Zero Rated Sales", "Sales (LUT)"
+      const ledHint = led.some(e => { const ln = txt(e, 'LEDGERNAME'); const lm = m.ledgers[ln] || {}; return ln !== party && /export|zero[\s-]?rated|\blut\b|overseas|foreign/i.test(ln + ' ' + (lm.nature || '') + ' ' + (lm.parent || '')); });
+      d.export = d.sez || d.deemed || /overseas|export/i.test(d.regType + ' ' + nature + ' ' + vt) || (ledHint && !d.gstin) || (!!country && !/^india$/i.test(country)) ||
         /other territory|outside india|foreign|overseas/i.test(posName || '') || (!!forex && !d.gstin);
       if (d.export && !d.gstin && !d.sez && !d.deemed) d.pos = '96';
       let partyAmt = 0;
