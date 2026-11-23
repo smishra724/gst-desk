@@ -79,7 +79,7 @@
 <BODY><DESC><STATICVARIABLES><SVCURRENTCOMPANY>${xesc(company)}</SVCURRENTCOMPANY><SVFROMDATE TYPE="Date">${from.replace(/-/g, '')}</SVFROMDATE><SVTODATE TYPE="Date">${to.replace(/-/g, '')}</SVTODATE>
 <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT></STATICVARIABLES>
 <TDL><TDLMESSAGE><COLLECTION NAME="GSTDeskVouchers" ISMODIFY="No"><TYPE>Voucher</TYPE>
-<FETCH>DATE, VOUCHERTYPENAME, VOUCHERNUMBER, REFERENCE, REFERENCEDATE, PARTYLEDGERNAME, PARTYNAME, PARTYGSTIN, PLACEOFSUPPLY, STATENAME, COUNTRYOFRESIDENCE, GSTREGISTRATIONTYPE, ISCANCELLED, ISOPTIONAL, ISDELETED, ISINVOICE, VCHGSTCLASS, ALLLEDGERENTRIES.*, LEDGERENTRIES.*, ALLINVENTORYENTRIES.*, INVENTORYENTRIES.*</FETCH>
+<FETCH>*, AllLedgerEntries.*, LedgerEntries.*, AllInventoryEntries.*, InventoryEntries.*, AllLedgerEntries.LedgerName, AllLedgerEntries.Amount, AllLedgerEntries.IsPartyLedger, AllInventoryEntries.StockItemName, AllInventoryEntries.Amount, AllInventoryEntries.BilledQty, AllInventoryEntries.ActualQty, AllInventoryEntries.RateDetails.*</FETCH>
 <FILTER>GSTDeskInRange</FILTER></COLLECTION>
 <SYSTEM TYPE="Formulae" NAME="GSTDeskInRange">$Date &gt;= ##SVFromDate AND $Date &lt;= ##SVToDate</SYSTEM></TDLMESSAGE></TDL>
 </DESC></BODY></ENVELOPE>`;
@@ -273,19 +273,36 @@
           const a = fmt(cur) > from ? fmt(cur) : from;
           const b = mEnd > end ? to : fmt(mEnd);
           if (onProgress) onProgress(`Reading ${a.slice(0, 7)} from Tally…`);
-          const raw = await post(url, reqVouchers(company, a, b));
-          let doc = parseXml(raw);
-          let vs = doc.getElementsByTagName('VOUCHER').length;
+          // 1st: a voucher collection filtered to these dates (Tally's Day Book over XML often sends only the last day of the period)
           opts.raw = opts.raw || [];
-          if (opts.raw.length < 3) opts.raw.push({ request: 'Day Book', from: a, to: b, vouchers: vs, xml: raw.slice(0, 3000000) });
-          if (!vs) {   // some Tally setups send an empty Day Book over XML – ask for the vouchers as a collection instead
-            if (onProgress) onProgress(`Day Book for ${a.slice(0, 7)} was empty – asking Tally for the vouchers another way…`);
-            try {
-              const raw2 = await post(url, reqVoucherColl(company, a, b));
-              const d2 = parseXml(raw2); const n2 = d2.getElementsByTagName('VOUCHER').length;
-              if (opts.raw.length < 4) opts.raw.push({ request: 'Voucher collection', from: a, to: b, vouchers: n2, xml: raw2.slice(0, 3000000) });
-              if (n2) { doc = d2; vs = n2; opts.stats.via = 'collection'; }
-            } catch (e) { opts.raw.push({ request: 'Voucher collection', error: e.message }); }
+          let doc = null, vs = 0;
+          try {
+            const raw = await post(url, reqVoucherColl(company, a, b));
+            doc = parseXml(raw); vs = doc.getElementsByTagName('VOUCHER').length;
+            if (opts.raw.length < 4) opts.raw.push({ request: 'Voucher collection', from: a, to: b, vouchers: vs, xml: raw.slice(0, 3000000) });
+            // usable only if the ledger lines came with it
+            if (vs && !doc.getElementsByTagName('ALLLEDGERENTRIES.LIST').length && !doc.getElementsByTagName('LEDGERENTRIES.LIST').length) vs = 0;
+            if (vs) opts.stats.via = 'collection';
+          } catch (e) { opts.raw.push({ request: 'Voucher collection', from: a, to: b, error: e.message }); }
+          if (!vs) {   // 2nd: the Day Book
+            if (onProgress) onProgress(`Reading ${a.slice(0, 7)} from Tally's Day Book…`);
+            const raw2 = await post(url, reqVouchers(company, a, b));
+            doc = parseXml(raw2); vs = doc.getElementsByTagName('VOUCHER').length;
+            if (opts.raw.length < 4) opts.raw.push({ request: 'Day Book', from: a, to: b, vouchers: vs, xml: raw2.slice(0, 3000000) });
+            const dates = new Set(Array.from(doc.getElementsByTagName('VOUCHER')).map(v => txt(v, 'DATE')));
+            opts.stats.via = 'daybook';
+            if (dates.size <= 1 && a !== b) {   // Day Book gave one day only → ask day by day
+              const all = [];
+              for (let d = new Date(a + 'T00:00:00'); fmt(d) <= b; d.setDate(d.getDate() + 1)) {
+                const day = fmt(d);
+                if (onProgress) onProgress(`Reading ${day} from Tally…`);
+                const dd = parseXml(await post(url, reqVouchers(company, day, day)));
+                for (const v of Array.from(dd.getElementsByTagName('VOUCHER'))) if (tDate(txt(v, 'DATE')) === day) all.push(v);
+              }
+              const holder = new DOMParser().parseFromString('<ENVELOPE><BODY></BODY></ENVELOPE>', 'text/xml');
+              all.forEach(v => holder.documentElement.firstChild.appendChild(holder.importNode(v, true)));
+              doc = holder; vs = all.length; opts.stats.via = 'daybook-days';
+            }
           }
           const got = toDocs(doc, m, opts).filter(d => !d.date || (d.date >= a && d.date <= b));
           docs.push(...got);
