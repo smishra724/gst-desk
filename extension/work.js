@@ -106,7 +106,7 @@
         </div>
         ${!c && st.company ? linkBox() : ''}
         ${c && !c.gstin ? '<div class="note warn" style="margin-top:10px">This client has no GSTIN saved – add it on the Clients tab (needed for GSTR-1 and place-of-supply).</div>' : ''}
-        ${st.status ? `<div class="note" style="margin-top:10px">${esc(st.status)}</div>` : ''}
+        ${st.status ? `<div class="note" style="margin-top:10px">${esc(st.status)}${st.raw ? ' <button class="link" id="w-raw" title="Saves exactly what Tally sent, to share if something is not picked up">Save Tally reply (for support)</button>' : ''}</div>` : ''}
         ${st.error ? `<div class="note err" style="margin-top:10px">${esc(st.error)}<br><span class="small">In TallyPrime: F1 (Help) → Settings → Connectivity → Client/Server configuration → TallyPrime acts as <b>Both</b>, Enable ODBC <b>Yes</b>, Port <b>${esc(st.port)}</b>. Restart Tally after changing.</span></div>` : ''}
         ${st.docs ? `<div class="stats" style="margin-top:12px">
           ${[['Sales', 'sales'], ['Credit notes', 'credit'], ['Purchases', 'purchase'], ['Debit notes', 'debit']].map(([l, k]) => { const s = sums(k); return `<div class="stat"><div class="k">${l}</div><div class="v">${s.n}</div><div class="s">Taxable ₹${inr(s.txval)} · Tax ₹${inr(s.tax)}</div></div>`; }).join('')}
@@ -120,6 +120,9 @@
         <section class="card"><header><h3>2 · GSTR-1 JSON</h3><span class="hint">from Tally sales</span></header><div class="body">
           ${single ? `<p class="small" style="margin-top:0">Builds B2B, B2CL, B2CS, CDNR, HSN (B2B/B2C) and documents issued for ${esc(st.from)}. Exports/SEZ are listed for you to add. Check it in the GST offline tool or upload on the portal.</p>
             <div class="row"><button class="primary" id="w-r1">Build GSTR-1 JSON</button>${st.gstr1 ? '<button id="w-r1dl">Download JSON</button><button id="w-r1x">Exceptions (Excel)</button>' : ''}</div>
+            ${st.gstr1 ? `<div class="row" style="margin-top:8px;align-items:center;gap:8px;flex-wrap:wrap"><select id="w-g1ret"><option value="GSTR1">GSTR-1 (monthly / quarterly)</option><option value="IFF">IFF (QRMP, months 1–2)</option></select>
+              <button class="primary" id="w-g1up">⬆ Upload to GST portal (autopilot)</button>
+              <span class="small muted">Logs in with the saved GST ID and password (you type the CAPTCHA), opens the return, uploads this JSON and generates the summary. Filing (DSC/EVC) stays with you.</span></div>` : ''}
             ${st.gstr1 ? gstr1Html() : ''}` : '<p class="muted small">Choose a single month (From = To) to build GSTR-1.</p>'}
         </div></section>
 
@@ -206,13 +209,16 @@
     try {
       const t = GSTTally.Tally(st.port);
       const stats = { seen: 0, skipped: {} };
-      st.docs = await t.documents(st.company, `${st.from}-01`, monthEnd(st.to), { ownStateCode: (c && c.gstin || '').slice(0, 2), stats },
+      const topts = { ownStateCode: (c && c.gstin || '').slice(0, 2), stats };
+      st.raw = null;
+      st.docs = await t.documents(st.company, `${st.from}-01`, monthEnd(st.to), topts,
         (msg) => { st.status = msg; const n = $('#work .note'); if (n) n.textContent = msg; });
       const live = st.docs.filter(d => !d.cancelled), ex = live.filter(d => d.export && d.kind === 'sales').length;
       const other = Object.entries(stats.skipped).filter(([t]) => !/^(receipt|payment|contra|journal|memorandum|reversing journal|physical stock|stock journal|delivery note|receipt note|rejections? (in|out)|sales order|purchase order|job work.*|material (in|out))$/i.test(t));
       st.status = `Read ${live.length} GST vouchers from “${st.company}” (${st.from} to ${st.to})${ex ? ` – including ${ex} export/SEZ invoice${ex > 1 ? 's' : ''}` : ''}. Tally sent ${stats.seen} vouchers in all.` +
         (other.length ? ` Not read as sales/purchase: ${other.map(([t, n]) => `“${t}” (${n})`).join(', ')} – tell GST Desk if one of these is a sales or purchase type.` : '') +
         (!stats.seen ? ' Tally sent no vouchers for these months – check the From/To months and that the company has entries in that period.' : '');
+      st.raw = topts.raw || null;
       if (c && c.tally.company !== st.company) { c.tally.company = st.company; App.saveProfiles(); }
     } catch (e) { st.error = e.message; st.status = ''; }
     render();
@@ -236,6 +242,26 @@
     } catch (e) { if (!quiet) { st.error = e.message; st.status = ''; } }
     render();
   }
+  // GSTR-1 / IFF autopilot (the CA Desk portal helper part of this extension): login → return → Prepare offline → upload JSON → Generate summary
+  function uploadG1() {
+    const c = client();
+    if (!c || !c.gstin) return App.toast('Choose the client (with its GSTIN) first');
+    if (!c.portal.username) return App.toast('Save the client’s GST ID and password on the Clients tab first');
+    if (st.from !== st.to) return App.toast('Upload works for one month at a time – set From and To to the same month and build the JSON again');
+    const [y, m] = st.from.split('-').map(Number);
+    const ret = ($('#w-g1ret') && $('#w-g1ret').value) || 'GSTR1';
+    const fy = m >= 4 ? `${y}-${String((y + 1) % 100).padStart(2, '0')}` : `${y - 1}-${String(y % 100).padStart(2, '0')}`;
+    const quarter = m >= 4 ? Math.ceil((m - 3) / 3) : 4;
+    const fp = `${String(m).padStart(2, '0')}${y}`;
+    const names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const job = { cid: '', key: '', gstin: c.gstin, ret, fp, fy, quarter, month: m, periodLabel: `${names[m - 1]} ${y}`, json: JSON.stringify(st.gstr1.json), jsonName: `${ret}_${c.gstin}_${fp}.json` };
+    chrome.runtime.sendMessage({ type: 'start-g1', clientId: c.id, job }, (r) => {
+      void chrome.runtime.lastError;
+      if (!r || r.error) return App.toast((r && r.error) || 'Could not start the autopilot', 6000);
+      App.toast('GST portal opened – type the CAPTCHA and log in. The autopilot uploads the JSON and generates the summary.', 7000);
+    });
+  }
+
   function addClientFromTally() {
     const name = st.company; if (!name) return;
     const p = G.newProfile(/\bLLP\b/i.test(name) ? 'llp' : /\bPUBLIC\b/i.test(name) ? 'public_company' : /\b(PVT|PRIVATE|LTD|LIMITED)\b/i.test(name) ? 'pvt_company' : 'proprietorship');
@@ -316,6 +342,8 @@
       st.gstr1 = W.buildGSTR1(st.docs, { gstin: c.gstin, fp: `${m}${y}` });
       render();
     });
+    on('#w-g1up', 'click', uploadG1);
+    on('#w-raw', 'click', () => { if (!st.raw) return; const b = new Blob([JSON.stringify({ company: st.company, from: st.from, to: st.to, replies: st.raw }, null, 1)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `tally-reply-${fileBase()}.json`; a.click(); });
     on('#w-r1dl', 'click', () => { const c = client(); const [y, m] = st.from.split('-'); downloadJson(`GSTR1_${c.gstin}_${m}${y}.json`, st.gstr1.json); });
     on('#w-r1x', 'click', () => XLSXW.save(`GSTR1_exceptions_${fileBase()}.xlsx`, [{ name: 'Exceptions', rows: [['Date', 'Voucher no.', 'Party', 'GSTIN', 'Issue'],
       ...st.gstr1.exceptions.map(e => [e.doc.date || '', e.doc.number || '', e.doc.party || '', e.doc.gstin || '', e.msg])] }]));

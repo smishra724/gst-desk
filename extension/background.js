@@ -85,6 +85,19 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       if (msg.type === 'reload-self') { reply({ ok: true }); setTimeout(() => chrome.runtime.reload(), 100); return; }
       return reply(await importClients(msg.clients || [], !!msg.replacePasswords));
     }
+    // GSTR-1 / IFF autopilot started from Tally & GST work: hand the job and this client's login to the portal helper (cad-background / gstauto.js)
+    if (msg.type === 'start-g1') {
+      if (!sender || !sender.url || !sender.url.startsWith(chrome.runtime.getURL(''))) return reply({ error: 'not allowed' });
+      const r = await chrome.storage.local.get(K.profiles);
+      const p = (r[K.profiles] || []).find(x => x.id === msg.clientId);
+      if (!p) return reply({ error: 'Client not found' });
+      let password = '';
+      try { password = p.portal.passwordEnc ? await self.GSTVault.decrypt(p.portal.passwordEnc) : ''; } catch (_) { password = ''; }
+      const url = 'https://services.gst.gov.in/services/login';
+      await chrome.storage.session.set({ g1job: { ...msg.job, stage: 'login', t: Date.now() }, ['pending:services.gst.gov.in']: { u: p.portal.username || '', p: password, extra: {}, t: Date.now() } });
+      await chrome.tabs.create({ url });
+      return reply({ ok: true, password: !!password });
+    }
     if (msg.type === 'expect-download') {
       await chrome.storage.session.set({ [EXPECT]: { ...msg.info, at: Date.now() } });
       return reply({ ok: true });

@@ -1,6 +1,6 @@
 {
-  "version": "3.0.2",
+  "version": "3.1.0",
   "zip": "gst-desk.zip",
-  "notes": "Quieter restart after updates (no errors from open CA Desk tabs).",
+  "notes": "Tally: vouchers fetched another way when the Day Book comes back empty; 'Save Tally reply' for support. GSTR-1 JSON can be uploaded to the GST portal by the autopilot from Tally & GST work.",
   "storeUrl": ""
 }

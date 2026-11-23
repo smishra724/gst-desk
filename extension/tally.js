@@ -74,6 +74,16 @@
 <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><EXPLODEFLAG>Yes</EXPLODEFLAG></STATICVARIABLES>
 </REQUESTDESC></EXPORTDATA></BODY></ENVELOPE>`;
 
+  // Fallback when the Day Book export comes back empty: a voucher collection for the same dates
+  const reqVoucherColl = (company, from, to) => `<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>GSTDeskVouchers</ID></HEADER>
+<BODY><DESC><STATICVARIABLES><SVCURRENTCOMPANY>${xesc(company)}</SVCURRENTCOMPANY><SVFROMDATE TYPE="Date">${from.replace(/-/g, '')}</SVFROMDATE><SVTODATE TYPE="Date">${to.replace(/-/g, '')}</SVTODATE>
+<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT></STATICVARIABLES>
+<TDL><TDLMESSAGE><COLLECTION NAME="GSTDeskVouchers" ISMODIFY="No"><TYPE>Voucher</TYPE>
+<FETCH>DATE, VOUCHERTYPENAME, VOUCHERNUMBER, REFERENCE, REFERENCEDATE, PARTYLEDGERNAME, PARTYNAME, PARTYGSTIN, PLACEOFSUPPLY, STATENAME, COUNTRYOFRESIDENCE, GSTREGISTRATIONTYPE, ISCANCELLED, ISOPTIONAL, ISDELETED, ISINVOICE, VCHGSTCLASS, ALLLEDGERENTRIES.*, LEDGERENTRIES.*, ALLINVENTORYENTRIES.*, INVENTORYENTRIES.*</FETCH>
+<FILTER>GSTDeskInRange</FILTER></COLLECTION>
+<SYSTEM TYPE="Formulae" NAME="GSTDeskInRange">$Date &gt;= ##SVFromDate AND $Date &lt;= ##SVToDate</SYSTEM></TDLMESSAGE></TDL>
+</DESC></BODY></ENVELOPE>`;
+
   /* ---------- masters ---------- */
   const DUTY = (s) => {
     const t = String(s || '').toLowerCase();
@@ -261,8 +271,22 @@
           const a = fmt(cur) > from ? fmt(cur) : from;
           const b = mEnd > end ? to : fmt(mEnd);
           if (onProgress) onProgress(`Reading ${a.slice(0, 7)} from Tally…`);
-          const doc = parseXml(await post(url, reqVouchers(company, a, b)));
-          docs.push(...toDocs(doc, m, opts));
+          const raw = await post(url, reqVouchers(company, a, b));
+          let doc = parseXml(raw);
+          let vs = doc.getElementsByTagName('VOUCHER').length;
+          opts.raw = opts.raw || [];
+          if (opts.raw.length < 3) opts.raw.push({ request: 'Day Book', from: a, to: b, vouchers: vs, xml: raw.slice(0, 3000000) });
+          if (!vs) {   // some Tally setups send an empty Day Book over XML – ask for the vouchers as a collection instead
+            if (onProgress) onProgress(`Day Book for ${a.slice(0, 7)} was empty – asking Tally for the vouchers another way…`);
+            try {
+              const raw2 = await post(url, reqVoucherColl(company, a, b));
+              const d2 = parseXml(raw2); const n2 = d2.getElementsByTagName('VOUCHER').length;
+              if (opts.raw.length < 4) opts.raw.push({ request: 'Voucher collection', from: a, to: b, vouchers: n2, xml: raw2.slice(0, 3000000) });
+              if (n2) { doc = d2; vs = n2; opts.stats.via = 'collection'; }
+            } catch (e) { opts.raw.push({ request: 'Voucher collection', error: e.message }); }
+          }
+          const got = toDocs(doc, m, opts).filter(d => !d.date || (d.date >= a && d.date <= b));
+          docs.push(...got);
           cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
         }
         return docs;
