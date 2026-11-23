@@ -5,7 +5,7 @@
   "launcher.vbs",
   "icon.ico"
  ],
- "extensionVersion": "3.2.0",
+ "extensionVersion": "3.3.0",
  "extensionBase": "https://smishra724.github.io/gst-desk/extension/",
  "extensionFiles": [
   "README.txt",
@@ -44,5 +44,5 @@
   "work.js",
   "xlsx.js"
  ],
- "notes": "CA Desk Bridge 1.3.2: GST Desk in your own Chrome (new tab, already signed in); separate window only on request"
+ "notes": "3.3.0: one Chrome extension for everything (desktop Bridge retired)"
 }

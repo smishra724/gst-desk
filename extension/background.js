@@ -98,15 +98,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       await chrome.tabs.create({ url });
       return reply({ ok: true, password: !!password });
     }
-    if (msg.type === 'bridge-proxy') {
-      const from = sender && sender.url ? new URL(sender.url) : null;
-      if (!from || from.hostname !== 'smishra724.github.io') return reply({ error: 'not allowed' });
-      if (!/^\/(status|update|check)$/.test(msg.path || '')) return reply({ error: 'not allowed' });
-      try {
-        const r = await fetch('http://127.0.0.1:47731' + msg.path, { method: msg.method === 'POST' ? 'POST' : 'GET', cache: 'no-store' });
-        return reply({ data: await r.json() });
-      } catch (e) { return reply({ error: 'CA Desk Bridge is not running' }); }
-    }
+    if (msg.type === 'bridge-proxy') return reply({ error: 'CA Desk Bridge is not running' });   // desktop Bridge retired
     if (msg.type === 'expect-download') {
       await chrome.storage.session.set({ [EXPECT]: { ...msg.info, at: Date.now() } });
       return reply({ ok: true });
@@ -233,25 +225,4 @@ async function exportClients() {
   return { clients: out, locked: !unlocked };
 }
 
-/* ---------- CA Desk Bridge (desktop app): background updates ----------
-   The Bridge writes new versions into this extension's folder. About once a minute we ask it which version is
-   in the folder; when it is newer than the one running, the extension restarts itself to load it. */
-const BRIDGE = 'http://127.0.0.1:47731';
-const verNewer = (a, b) => { const x = String(a || '0').split('.').map(Number), y = String(b || '0').split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; };
-async function bridgeCheck() {
-  try {
-    const v = chrome.runtime.getManifest().version;
-    const r = await fetch(`${BRIDGE}/ext?running=${encodeURIComponent(v)}`, { cache: 'no-store' });
-    if (!r.ok) return;
-    const j = await r.json();
-    if (!verNewer(j.version, v)) return;
-    const { gstf_bridge_reload: t } = await chrome.storage.local.get('gstf_bridge_reload');
-    if (t && t.v === j.version && Date.now() - t.at < 30 * 60000) return;   // already tried for this version recently (folder not the loaded one?)
-    await chrome.storage.local.set({ gstf_bridge_reload: { v: j.version, at: Date.now() } });
-    chrome.runtime.reload();
-  } catch (_) { /* Bridge not installed / not running */ }
-}
-try { chrome.alarms.create('gstf-bridge', { periodInMinutes: 1 }); } catch (_) { /* no alarms */ }
-chrome.alarms && chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'gstf-bridge') bridgeCheck(); });
-chrome.runtime.onStartup.addListener(bridgeCheck);
-setTimeout(bridgeCheck, 5000);
+try { chrome.alarms.clear('gstf-bridge'); } catch (_) { /* the desktop Bridge is retired: one extension does everything */ }

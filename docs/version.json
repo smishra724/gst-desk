@@ -1,6 +1,6 @@
 {
-  "version": "3.2.0",
+  "version": "3.3.0",
   "zip": "gst-desk.zip",
-  "notes": "CA Desk Bridge 1.3.2: GST Desk in your own Chrome (new tab, already signed in); separate window only on request",
+  "notes": "3.3.0: one Chrome extension for everything (desktop Bridge retired)",
   "storeUrl": ""
 }
