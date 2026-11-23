@@ -117,15 +117,26 @@ try {
   if (-not $wasRunning) { Start-Bridge }
   $quiet = ($env:CADESK_STARTUP -eq '1')
   if ($quiet) { return }
-  # open CA Desk in its window (the Bridge sets the window up the first time - about 150 MB)
-  $opened = $false
-  for ($i = 0; $i -lt 40 -and -not $opened; $i++) {
-    try { $r = (New-Object System.Net.WebClient).DownloadString('http://127.0.0.1:47731/open'); $opened = $true } catch { Start-Sleep -Milliseconds 500 }
+  # GST Desk runs inside your normal Chrome (new tab, already signed in to CA Desk). Chrome lets an extension in only by hand, once.
+  $inChrome = $false
+  foreach ($ud in @((Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data'))) {
+    if (-not (Test-Path -LiteralPath $ud)) { continue }
+    foreach ($pf in Get-ChildItem -LiteralPath $ud -Directory -ErrorAction SilentlyContinue) {
+      foreach ($fn in 'Secure Preferences', 'Preferences') {
+        $f = Join-Path $pf.FullName $fn
+        if (Test-Path -LiteralPath $f) { try { if ([IO.File]::ReadAllText($f).Replace('\\', '\').IndexOf($extDir, [StringComparison]::OrdinalIgnoreCase) -ge 0) { $inChrome = $true } } catch { } }
+      }
+    }
   }
-  if ($extErr) { Say "CA Desk Bridge is running, but GST Desk could not be downloaded:`n$extErr`n`nCheck the internet connection and open CA Desk again." 'Warning' }
-  elseif ($first -or $upgrade) {
-    Say "CA Desk Bridge v$newVer is installed and running (icon near the clock).`n`nCA Desk opens in its own window with GST Desk built in - nothing to add to Chrome.`nThe first time it downloads that window (about 150 MB), so give it a minute or two, then sign in to CA Desk once.`n`nFrom now on use the 'CA Desk' icon on your desktop. Tally and DSC tokens are connected through the Bridge."
-  } elseif (-not $opened) { Say 'CA Desk Bridge did not answer. Restart the computer and open CA Desk again.' 'Warning' }
+  if ($extErr) { Say "CA Desk Bridge is running, but GST Desk could not be downloaded:`n$extErr`n`nCheck the internet connection and run CA-Desk-Bridge.exe again." 'Warning'; return }
+  if (-not $inChrome) {
+    try { Set-Clipboard -Value $extDir } catch { }
+    try { Start-Process 'chrome.exe' 'chrome://extensions' } catch { }
+    Say "CA Desk Bridge v$newVer is installed and running (icon near the clock).`n`nLast step, only once - add GST Desk to your Chrome (chrome://extensions has opened):`n  1. Turn on Developer mode (top right).`n  2. Click Load unpacked, press Ctrl+V (the folder path is copied) and click Select Folder.`n  3. Reload CA Desk (Ctrl + F5).`n`nGST Desk then opens in a new tab, already signed in, and the Bridge keeps it up to date by itself."
+    return
+  }
+  if ($first -or $upgrade) { Say "CA Desk Bridge v$newVer is installed and running (icon near the clock). GST Desk in your Chrome is kept up to date by itself." }
+  elseif ($env:CADESK_OPEN -eq '1' -or $wasRunning) { Start-Process 'https://smishra724.github.io/ca-desk/' }
 } catch {
   Say ("CA Desk Bridge could not start:`n`n" + $_.Exception.Message) 'Warning'
   exit 1

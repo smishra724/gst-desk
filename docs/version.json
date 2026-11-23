@@ -1,6 +1,6 @@
 {
   "version": "3.2.0",
   "zip": "gst-desk.zip",
-  "notes": "CA Desk Bridge 1.3.1: notification shown once (not again and again)",
+  "notes": "CA Desk Bridge 1.3.2: GST Desk in your own Chrome (new tab, already signed in); separate window only on request",
   "storeUrl": ""
 }

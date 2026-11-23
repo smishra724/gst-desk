@@ -10,7 +10,7 @@
 param([switch]$NoTray, [int]$Port = 47731, [string]$Root = '', [string]$Base = 'https://smishra724.github.io/gst-desk/bridge/')
 
 $ErrorActionPreference = 'Stop'
-$AppVersion = '1.3.1'
+$AppVersion = '1.3.2'
 if (-not $Root) { $Root = Split-Path -Parent $MyInvocation.MyCommand.Path }
 
 # one copy only
@@ -22,7 +22,7 @@ $State = [hashtable]::Synchronized(@{
   version = $AppVersion; root = $Root; port = $Port; base = $Base
   latest = $null; updating = $false; progress = ''; lastCheck = ''; lastError = ''; message = ''; updatedTo = ''
   extRunning = ''; extSeen = ''; updateRequested = $false; checkRequested = $true; restart = $false; stop = $false
-  browserWanted = $true; browserBusy = $false; browserProgress = ''; browserError = ''; openAfterInstall = ''
+  browserWanted = $false; browserBusy = $false; browserProgress = ''; browserError = ''; openAfterInstall = ''
 })
 
 # ---------- shared helpers (loaded in every thread) ----------
