@@ -3,7 +3,7 @@ rem CA Desk Bridge - setup. Installs for this Windows user only (no admin rights
 rem It installs the CA Desk Bridge tray app (like a DSC utility) and the CA Desk Suite browser extension,
 rem and keeps both up to date from then on. Uninstall: run this file with  /uninstall
 title CA Desk Bridge setup
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:MODE='%~1'; $s=(Get-Content -Raw -LiteralPath '%~f0') -split '#PSBEGIN#',2; iex $s[1]"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:MODE='%~1'; $t=Get-Content -Raw -LiteralPath '%~f0'; iex $t.Substring($t.LastIndexOf('#PS'+'BEGIN#')+9)"
 echo.
 pause
 exit /b
