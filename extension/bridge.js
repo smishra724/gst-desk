@@ -46,6 +46,10 @@
         const r = await new Promise(res => chrome.runtime.sendMessage({ type: 'export-clients' }, x => { void chrome.runtime.lastError; res(x || { error: 'GST Desk did not answer' }); }));
         post({ id, ok: !r.error, data: r, error: r.error });
       }
+      else if (action === 'bridge') {   // CA Desk Bridge on this computer, reached through the extension (no extra Chrome permission prompt)
+        const r = await new Promise(res => chrome.runtime.sendMessage({ type: 'bridge-proxy', path: e.data.path, method: e.data.method }, x => { void chrome.runtime.lastError; res(x || { error: 'GST Desk did not answer' }); }));
+        post({ id, ok: !r.error, data: r.data, error: r.error });
+      }
       else if (action === 'reload') { post({ id, ok: true }); setTimeout(() => chrome.runtime.sendMessage({ type: 'reload-self' }, () => void chrome.runtime.lastError), 150); }
       else post({ id, ok: false, error: 'unknown action' });
     } catch (err) { post({ id, ok: false, error: err.message }); }
