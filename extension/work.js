@@ -13,8 +13,12 @@
     clientId: '', company: '', port: 9000, from: '', to: '',
     docs: null, status: '', error: '', companies: [],
     twoB: null, twoBFiles: [], r1: null, r1File: '',
-    recon2b: null, reconR1: null, gstr1: null, tolerance: 1
+    recon2b: null, reconR1: null, gstr1: null, tolerance: 1,
+    fy: '', r1y: [], r1yFiles: [], g9: null, fsT: '', fsI: ''
   };
+  (function fyDefault() { const d = new Date(), y = d.getMonth() >= 3 ? d.getFullYear() - 1 : d.getFullYear() - 2; st.fy = `${y}-${String(y + 1).slice(2)}`; })();
+  const fyRange = (fy) => { const y = +fy.slice(0, 4); return { from: `${y}-04`, to: `${y + 1}-03` }; };
+  const isFy = () => { const r = fyRange(st.fy); return st.docs && st.from === r.from && st.to === r.to; };
   (function defaults() {
     const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
     const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0');
@@ -117,6 +121,8 @@
         <div class="row" style="margin-top:12px"><button id="w-reg">Export sales &amp; purchase registers (Excel)</button></div>` : ''}
       </div></section>
 
+      ${g9Card()}
+
       ${st.docs ? `
       <div class="cols">
         <section class="card"><header><h3>2 · GSTR-1 JSON</h3><span class="hint">from Tally sales</span></header><div class="body">
@@ -152,6 +158,38 @@
         </div></section>
       </div>` : ''}`;
     wire();
+  }
+
+  function g9Card() {
+    const ys = []; const now = new Date(), last = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+    for (let y = last; y >= last - 5; y--) ys.push(`${y}-${String(y + 1).slice(2)}`);
+    const w = st.g9, inr0 = (a) => a ? inr(a.txval) : '–', tx = (a) => a ? inr(r2(a.igst + a.cgst + a.sgst + a.cess)) : '–';
+    const r2 = W.r2;
+    return `<section class="card"><header><h3>6 · GSTR-9 / 9C (annual return)</h3><span class="hint">whole year from Tally + portal returns</span></header><div class="body">
+      <div class="row" style="align-items:flex-end;gap:10px;flex-wrap:wrap">
+        <div class="f"><label for="w-fy">Financial year</label><select id="w-fy">${ys.map(y => `<option${y === st.fy ? ' selected' : ''}>${y}</option>`).join('')}</select></div>
+        <button class="${isFy() ? '' : 'primary'}" id="w-fyread">Read April–March from Tally</button>
+        ${isFy() ? `<button class="primary" id="w-g9">Build GSTR-9 working</button>${w ? '<button id="w-g9x">Download GSTR-9 / 9C (Excel)</button>' : ''}` : '<span class="small muted">Reads the whole year (12 months) from the Tally company chosen above.</span>'}
+      </div>
+      ${isFy() ? `<div class="cols" style="margin-top:12px">
+        <div><div class="drop" id="w-r1y-drop"><b>GSTR-1 JSON files for the year</b> (optional)<br><span class="small muted">${st.r1yFiles.length ? esc(st.r1yFiles.length + ' file(s): ' + st.r1yFiles.join(', ')) : 'Choose all 12 (or 4 quarterly) – from Download returns – to compare books with what was filed'}</span></div>
+          <input type="file" id="w-r1y" accept=".json,application/json" multiple hidden>
+          <p class="small muted">GSTR-2B for 8A: load the year's 2B files in step 3 below (${st.twoBFiles.length ? st.twoBFiles.length + ' loaded' : 'none loaded'}).</p></div>
+        <div><div class="grid"><div class="f s6"><label for="w-fst">Turnover as per audited accounts (9C 5A)</label><input id="w-fst" type="text" inputmode="decimal" value="${esc(st.fsT)}" placeholder="blank = books turnover"></div>
+          <div class="f s6"><label for="w-fsi">ITC as per audited accounts (9C 12A)</label><input id="w-fsi" type="text" inputmode="decimal" value="${esc(st.fsI)}" placeholder="blank = books ITC"></div></div></div>
+      </div>` : ''}
+      ${w ? `<div class="tblwrap" style="margin-top:12px"><table class="tbl"><thead><tr><th>Table</th><th>Particulars</th><th class="num">Taxable value</th><th class="num">Tax</th></tr></thead><tbody>
+        ${[['4A', 'B2C', w.t4.b2c], ['4B', 'B2B', w.t4.b2b], ['4C', 'Exports with tax', w.t4.exp_wp], ['4D', 'SEZ with tax', w.t4.sez_wp], ['4E', 'Deemed exports', w.t4.deemed], ['4G', 'Reverse charge (inward)', w.t4.rcm], ['4I', 'Credit notes (–)', w.t4.cn], ['4N', 'Tax payable supplies', w.t4N],
+          ['5A', 'Exports without tax', w.t5.exp_wop], ['5B', 'SEZ without tax', w.t5.sez_wop], ['5D', 'Exempt / nil / non-GST', w.t5.exempt], ['5N', 'Supplies with no tax', w.t5N],
+          ['6B', 'ITC – inputs, capital goods, services (books)', w.t6.inputs], ['6C/6D', 'ITC – reverse charge', { txval: w.t6.rcmUnreg.txval + w.t6.rcmReg.txval, igst: w.t6.rcmUnreg.igst + w.t6.rcmReg.igst, cgst: w.t6.rcmUnreg.cgst + w.t6.rcmReg.cgst, sgst: w.t6.rcmUnreg.sgst + w.t6.rcmReg.sgst, cess: w.t6.rcmUnreg.cess + w.t6.rcmReg.cess }], ['6E', 'ITC – imports', w.t6.imports],
+          ['8A', 'ITC as per GSTR-2B', w.t8A], ['8D', 'Difference 8A − 8B', w.t8D]].map(([tb, l, a]) => `<tr${/N$|8D/.test(tb) ? ' style="font-weight:600"' : ''}><td>${tb}</td><td>${l}</td><td class="num">${inr0(a)}</td><td class="num">${tx(a)}</td></tr>`).join('')}
+        <tr style="font-weight:600"><td>Turnover</td><td>4N + 5N − 4G</td><td class="num">${inr(w.turnover)}</td><td></td></tr>
+        <tr><td>9C 5R</td><td>Un-reconciled turnover (audited − GSTR-9)</td><td class="num">${inr(w.c9.diff)}</td><td></td></tr>
+        <tr><td>9C 12F</td><td>Un-reconciled ITC (audited − books)</td><td class="num"></td><td class="num">${inr(w.c9.itcDiff)}</td></tr>
+        ${w.r1 ? `<tr><td colspan="4" class="small muted">Books vs GSTR-1 filed – B2B: ${inr(w.t4.b2b.txval - w.r1.b2b.txval)} · B2C: ${inr(w.t4.b2c.txval - w.r1.b2c.txval)} · credit notes: ${inr(w.t4.cn.txval + w.t5.cn.txval - w.r1.cn.txval)} difference (details in the Excel)</td></tr>` : ''}
+      </tbody></table></div>
+      <p class="small muted">The Excel has GSTR-9 (tables 4–9), Books vs GSTR-1, GSTR-9C (5, 7, 12), month-wise totals and HSN tables 17 / 18 – ready to compare with the system-computed GSTR-9 and fill in the portal or offline tool. Filing stays with you (DSC / EVC).</p>` : ''}
+    </div></section>`;
   }
 
   function gstr1Html() {
@@ -283,6 +321,11 @@
     for (const f of files) { try { out.push({ name: f.name, json: JSON.parse(await f.text()) }); } catch (e) { App.toast(`${f.name} is not valid JSON`); } }
     return out;
   }
+  function buildG9() {
+    const c = client();
+    st.g9 = W.gstr9(st.docs, { gstin: (c && c.gstin) || '', fy: st.fy, r1: st.r1y, twoB: st.twoB, fsTurnover: st.fsT, fsItc: st.fsI });
+    render();
+  }
   async function load2B(files) {
     const got = await readJsonFiles(files);
     if (!got.length) return;
@@ -350,6 +393,13 @@
       render();
     });
     on('#w-g1up', 'click', uploadG1);
+    on('#w-fy', 'change', (e) => { st.fy = e.target.value; st.g9 = null; render(); });
+    on('#w-fyread', 'click', () => { const r = fyRange(st.fy); st.from = r.from; st.to = r.to; st.g9 = null; fetchTally(); });
+    on('#w-fst', 'change', (e) => { st.fsT = e.target.value.replace(/[^0-9.\-]/g, ''); if (st.g9) buildG9(); });
+    on('#w-fsi', 'change', (e) => { st.fsI = e.target.value.replace(/[^0-9.\-]/g, ''); if (st.g9) buildG9(); });
+    on('#w-g9', 'click', buildG9);
+    on('#w-g9x', 'click', () => XLSXW.save(`GSTR9_9C_${(client() ? G.displayName(client()) : st.company || 'client').replace(/[\\/:*?"<>|]+/g, ' ').trim()}_FY${st.fy}.xlsx`, W.gstr9Sheets(st.g9)));
+    dropZone('#w-r1y-drop', '#w-r1y', async (files) => { const got = await readJsonFiles(files); if (!got.length) return; st.r1y = got.map(g => g.json); st.r1yFiles = got.map(g => g.name); if (st.g9) buildG9(); else render(); App.toast(`Loaded ${got.length} GSTR-1 file(s)`); });
     on('#w-pickco', 'change', (e) => { st.company = e.target.value; const c = client(); if (c && st.company && (!c.tally.company || score(c, c.tally.company) < 0.35)) { c.tally.company = st.company; App.saveProfiles(); } st.docs = null; st.status = ''; saveSettings(); render(); });
     on('#w-relink', 'click', () => { const c = client(); if (c) { c.tally.company = st.company; App.saveProfiles(); App.toast('Linked'); render(); } });
     on('#w-raw', 'click', () => { if (!st.raw) return; const b = new Blob([JSON.stringify({ company: st.company, from: st.from, to: st.to, replies: st.raw }, null, 1)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `tally-reply-${fileBase()}.json`; a.click(); });
@@ -386,4 +436,6 @@
     render();
     listCompanies(true);   // show the companies open in Tally right away (quietly, if Tally is closed)
   });
+  // CA Desk opened this tab for one month's return (e.g. GSTR-1 for Oct 2026)
+  document.addEventListener('gstf-work-month', (e) => { if (/^\d{4}-\d{2}$/.test(e.detail || '')) { st.from = st.to = e.detail; st.docs = null; st.gstr1 = null; st.threeB = null; st.status = ''; if (ready) render(); } });
 })();

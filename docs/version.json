@@ -1,6 +1,6 @@
 {
-  "version": "3.3.0",
+  "version": "3.4.0",
   "zip": "gst-desk.zip",
-  "notes": "3.3.0: one Chrome extension for everything (desktop Bridge retired)",
+  "notes": "3.4.0: GSTR-9 / 9C working from Tally (tables 4-9, 17, 18, books vs GSTR-1, 9C reconciliation); CA Desk opens Tally & GST work for a month",
   "storeUrl": ""
 }

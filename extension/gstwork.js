@@ -413,5 +413,137 @@
     return [{ name: 'GSTR-3B working', rows, money: [1, 2, 3, 4, 5], widths: [62, 16, 14, 14, 14, 12, 46] }];
   }
 
-  root.GSTWork = { registers, buildGSTR1, validateGSTR1, parse2B, parseGSTR1, reconcile, reconSheets, threeB, threeBSheet, rateGroups, snap, r2, toIso, ddmmyyyy, normNum, looseNum };
+
+  /* ---------- GSTR-9 / 9C (annual) ---------- */
+  const z5 = () => ({ txval: 0, igst: 0, cgst: 0, sgst: 0, cess: 0 });
+  const add5 = (a, d, s = 1) => { a.txval = r2(a.txval + s * (+d.txval || 0)); a.igst = r2(a.igst + s * (+d.igst || 0)); a.cgst = r2(a.cgst + s * (+d.cgst || 0)); a.sgst = r2(a.sgst + s * (+d.sgst || 0)); a.cess = r2(a.cess + s * (+d.cess || 0)); return a; };
+  const sum5 = (...xs) => xs.reduce((a, x) => add5(a, x), z5());
+  const neg5 = (x) => add5(z5(), x, -1);
+  // GSTR-1 JSON(s) from the portal, totalled into the GSTR-9 buckets
+  function r1Annual(list) {
+    const o = { b2c: z5(), b2b: z5(), exp_wp: z5(), sez_wp: z5(), deemed: z5(), exp_wop: z5(), sez_wop: z5(), cn: z5(), dn: z5(), nil: z5(), periods: [] };
+    const it = (items) => sumItems(items, MR1);
+    for (const j0 of list) {
+      const j = unwrap(j0); if (j.fp) o.periods.push(j.fp);
+      for (const s of j.b2b || []) for (const i of s.inv || []) {
+        const v = it(i.itms), ty = String(i.inv_typ || 'R').toUpperCase();
+        add5(ty === 'SEWP' ? o.sez_wp : ty === 'SEWOP' ? o.sez_wop : ty === 'DE' ? o.deemed : o.b2b, v);
+      }
+      for (const s of j.b2cl || []) for (const i of s.inv || []) add5(o.b2c, it(i.itms));
+      for (const c of j.b2cs || []) add5(o.b2c, { txval: c.txval, igst: c.iamt, cgst: c.camt, sgst: c.samt, cess: c.csamt });
+      for (const e of j.exp || []) for (const i of e.inv || []) { const v = { txval: 0, igst: 0, cgst: 0, sgst: 0, cess: 0 }; for (const x of i.itms || []) { v.txval += +x.txval || 0; v.igst += +x.iamt || 0; v.cess += +x.csamt || 0; } add5(String(e.exp_typ).toUpperCase() === 'WPAY' ? o.exp_wp : o.exp_wop, v); }
+      for (const s of [...(j.cdnr || []), ...(j.cdnur ? [{ nt: j.cdnur }] : [])]) for (const n of s.nt || []) add5(n.ntty === 'D' ? o.dn : o.cn, it(n.itms));
+      for (const n of (j.nil && j.nil.inv) || []) o.nil.txval = r2(o.nil.txval + (+n.nil_amt || 0) + (+n.expt_amt || 0) + (+n.ngsup_amt || 0));
+    }
+    return o;
+  }
+
+  function gstr9(docs, { gstin, fy, r1, twoB, fsTurnover, fsItc } = {}) {
+    const L = live(docs || []);
+    const t4 = { b2c: z5(), b2b: z5(), exp_wp: z5(), sez_wp: z5(), deemed: z5(), at: z5(), rcm: z5(), cn: z5(), dn: z5() };
+    const t5 = { exp_wop: z5(), sez_wop: z5(), rcm: z5(), exempt: z5(), nil: z5(), nongst: z5(), cn: z5(), dn: z5() };
+    const t6 = { inputs: z5(), rcmUnreg: z5(), rcmReg: z5(), imports: z5() };
+    const monthly = {}, rates = {};
+    for (const d of L) {
+      const m = (d.date || '').slice(0, 7), M = monthly[m] ||= { sales: z5(), credit: z5(), purchase: z5(), debit: z5(), rcm: z5() };
+      const tax = taxOf(d) + d.cess;
+      if (d.kind === 'sales' || d.kind === 'credit') {
+        add5(M[d.kind], d);
+        if (d.kind === 'credit') add5(tax > 0 ? t4.cn : t5.cn, d);
+        else if (d.sez) add5(tax > 0 ? t4.sez_wp : t5.sez_wop, d);
+        else if (d.deemed) add5(t4.deemed, d);
+        else if (d.export) add5(tax > 0 ? t4.exp_wp : t5.exp_wop, d);
+        else if (tax > 0) add5(d.gstin ? t4.b2b : t4.b2c, d);
+        else add5(t5.exempt, d);
+        if (tax > 0 && !d.export) { const rt = snap(d.txval ? (taxOf(d) / d.txval * 100) : 0); const k = rt + '%'; add5(rates[k] ||= z5(), d, d.kind === 'credit' ? -1 : 1); }
+      } else if (d.kind === 'purchase' || d.kind === 'debit') {
+        const s = d.kind === 'debit' ? -1 : 1;
+        add5(M[d.kind], d);
+        if (d.rcm) { add5(t4.rcm, d, s); add5(d.gstin ? t6.rcmReg : t6.rcmUnreg, d, s); add5(M.rcm, d, s); }
+        else if (d.export) add5(t6.imports, d, s);
+        else add5(t6.inputs, d, s);
+      }
+    }
+    const t4N = sum5(t4.b2c, t4.b2b, t4.exp_wp, t4.sez_wp, t4.deemed, t4.at, t4.rcm, neg5(t4.cn), t4.dn);
+    const t5N = sum5(t5.exp_wop, t5.sez_wop, t5.rcm, t5.exempt, t5.nil, t5.nongst, neg5(t5.cn), t5.dn);
+    const turnover = r2(t4N.txval - t4.rcm.txval + t5N.txval);
+    const t6Books = sum5(t6.inputs, t6.rcmUnreg, t6.rcmReg, t6.imports);
+    // 8A: ITC as per GSTR-2B (B2B + CDNR, ITC available); 8B = 6B + 6H (here: books ITC on inputs other than imports / RCM)
+    let t8A = null;
+    if (twoB) { t8A = z5(); for (const p of twoB.docs) if (p.itcavl !== 'N' && /^(B2B|B2BA|CDNR|CDNRA|ECOM)$/.test(p.section) && p.rev !== 'Y') add5(t8A, p); }
+    const t8B = t6.inputs;
+    const t8D = t8A ? add5({ ...t8A }, t8B, -1) : null;
+    // tax payable (table 9) = output tax on 4N less 4G (RCM shown separately as payable too)
+    const out9 = sum5(t4.b2c, t4.b2b, t4.exp_wp, t4.sez_wp, t4.deemed, neg5(t4.cn), t4.dn);
+    const r1s = r1 && r1.length ? r1Annual(r1) : null;
+    // HSN summaries (17 outward, 18 inward)
+    const hsn = (kinds) => { const H = {}; for (const d of L) { if (!kinds.includes(d.kind)) continue; const s = (d.kind === 'credit' || d.kind === 'debit') ? -1 : 1;
+      const tot = (d.lines || []).reduce((a, l) => a + (+l.value || 0), 0) || 1;
+      for (const l of d.lines || []) { const k = `${l.hsn || '(no HSN)'}|${l.uqc || 'NA'}|${snap(+l.rate || d.effRate || 0)}`; const f = (+l.value || 0) / tot;
+        const h = H[k] ||= { hsn: l.hsn || '', uqc: l.uqc || 'NA', rt: snap(+l.rate || d.effRate || 0), qty: 0, txval: 0, igst: 0, cgst: 0, sgst: 0, cess: 0 };
+        h.qty = r2(h.qty + s * (+l.qty || 0)); h.txval = r2(h.txval + s * (+l.value || 0)); h.igst = r2(h.igst + s * d.igst * f); h.cgst = r2(h.cgst + s * d.cgst * f); h.sgst = r2(h.sgst + s * d.sgst * f); h.cess = r2(h.cess + s * d.cess * f); } }
+      return Object.values(H).sort((a, b) => b.txval - a.txval); };
+    const booksTurnover = r2(t4N.txval - t4.rcm.txval + t5N.txval);
+    const fsT = fsTurnover === '' || fsTurnover == null || isNaN(+fsTurnover) ? booksTurnover : +fsTurnover;
+    const fsI = fsItc === '' || fsItc == null || isNaN(+fsItc) ? r2(t6Books.igst + t6Books.cgst + t6Books.sgst + t6Books.cess) : +fsItc;
+    return { gstin, fy, t4, t5, t6, t4N, t5N, turnover, t6Books, t8A, t8B, t8D, out9, r1: r1s, monthly, rates, hsnOut: hsn(['sales', 'credit']), hsnIn: hsn(['purchase', 'debit']),
+      c9: { fsTurnover: fsT, gstr9Turnover: turnover, diff: r2(fsT - turnover), fsItc: fsI, gstr9Itc: r2(t6Books.igst + t6Books.cgst + t6Books.sgst + t6Books.cess), itcDiff: r2(fsI - (t6Books.igst + t6Books.cgst + t6Books.sgst + t6Books.cess)) } };
+  }
+
+  function gstr9Sheets(w) {
+    const H = ['Table', 'Particulars', 'Taxable value', 'IGST', 'CGST', 'SGST/UTGST', 'Cess', 'Note'];
+    const row = (tb, label, a, note) => [tb, label, a ? a.txval : '', a ? a.igst : '', a ? a.cgst : '', a ? a.sgst : '', a ? a.cess : '', note || ''];
+    const g9 = [['GSTR-9 working – ' + (w.gstin || '') + ' – FY ' + (w.fy || '')], ['From Tally (books). Check against the system-computed GSTR-9 on the portal before filing.'], [], H,
+      ['Pt II', 'Details of outward and inward supplies on which tax is payable'],
+      row('4A', 'Supplies to unregistered persons (B2C)', w.t4.b2c), row('4B', 'Supplies to registered persons (B2B)', w.t4.b2b),
+      row('4C', 'Zero rated (export) on payment of tax', w.t4.exp_wp), row('4D', 'Supplies to SEZ on payment of tax', w.t4.sez_wp),
+      row('4E', 'Deemed exports', w.t4.deemed), row('4F', 'Advances on which tax paid, invoice not issued', w.t4.at, 'Not read from Tally – fill if any'),
+      row('4G', 'Inward supplies on which tax is paid on reverse charge', w.t4.rcm), row('4I', 'Credit notes issued (–)', w.t4.cn), row('4J', 'Debit notes issued (+)', w.t4.dn, 'Sales-side debit notes, if any – not read'),
+      row('4N', 'Supplies and advances on which tax is to be paid', w.t4N),
+      [], row('5A', 'Zero rated (export) without payment of tax', w.t5.exp_wop), row('5B', 'Supplies to SEZ without payment of tax', w.t5.sez_wop),
+      row('5D', 'Exempted', w.t5.exempt, 'All sales with no GST in Tally – split into 5D / 5E / 5F as applicable'), row('5E', 'Nil rated', w.t5.nil), row('5F', 'Non-GST supply', w.t5.nongst),
+      row('5H', 'Credit notes on the above (–)', w.t5.cn), row('5N', 'Supplies and advances on which tax is not to be paid', w.t5N),
+      ['5N + 4N − 4G', 'Total turnover (incl. advances)', w.turnover],
+      [], ['Pt III', 'Details of ITC (as per books)'],
+      row('6B', 'Inward supplies (other than imports and RCM) – inputs / capital goods / input services', w.t6.inputs, 'Split into inputs / capital goods / input services as per your ledgers'),
+      row('6C', 'Inward supplies from unregistered persons (RCM)', w.t6.rcmUnreg), row('6D', 'Inward supplies from registered persons (RCM)', w.t6.rcmReg),
+      row('6E', 'Import of goods', w.t6.imports), row('—', 'Total ITC as per books', w.t6Books, '6A (ITC availed in GSTR-3B) comes from the portal – compare with this'),
+      [], row('8A', 'ITC as per GSTR-2B (B2B + CDNR, ITC available)', w.t8A, w.t8A ? 'Load all 12 GSTR-2B files for the year' : 'Load GSTR-2B files (step 3) for 8A'),
+      row('8B', 'ITC as per 6B (books)', w.t8B), row('8D', 'Difference (8A − 8B)', w.t8D, 'Positive = ITC in 2B not taken in books'),
+      [], ['Pt IV', 'Tax payable (table 9)'], row('9', 'Tax payable on outward supplies (4A to 4E less notes)', w.out9), row('9', 'Tax payable on reverse charge (4G)', w.t4.rcm)];
+    const sheets = [{ name: 'GSTR-9', rows: g9, money: [2, 3, 4, 5, 6], widths: [10, 60, 16, 14, 14, 14, 12, 50] }];
+    if (w.r1) {
+      const R = w.r1, B = w.t4, C5 = w.t5, d = (a, b) => ({ txval: r2(a.txval - b.txval), igst: r2(a.igst - b.igst), cgst: r2(a.cgst - b.cgst), sgst: r2(a.sgst - b.sgst), cess: r2(a.cess - b.cess) });
+      const rows = [['Books (Tally) vs GSTR-1 filed – FY ' + (w.fy || '') + (R.periods.length ? ` – ${R.periods.length} GSTR-1 file(s)` : '')], [], ['Section', 'Source', 'Taxable value', 'IGST', 'CGST', 'SGST/UTGST', 'Cess']];
+      const pair = (label, books, port) => { rows.push([label, 'Books', books.txval, books.igst, books.cgst, books.sgst, books.cess], ['', 'GSTR-1', port.txval, port.igst, port.cgst, port.sgst, port.cess]); const x = d(books, port); rows.push(['', 'Difference', x.txval, x.igst, x.cgst, x.sgst, x.cess], []); };
+      pair('B2C (4A)', B.b2c, R.b2c); pair('B2B (4B)', B.b2b, R.b2b); pair('Exports with tax (4C)', B.exp_wp, R.exp_wp); pair('SEZ with tax (4D)', B.sez_wp, R.sez_wp);
+      pair('Deemed exports (4E)', B.deemed, R.deemed); pair('Credit notes (4I)', sum5(B.cn, C5.cn), R.cn); pair('Exports without tax (5A)', C5.exp_wop, R.exp_wop); pair('SEZ without tax (5B)', C5.sez_wop, R.sez_wop);
+      pair('Nil / exempt / non-GST (5D–5F)', sum5(C5.exempt, C5.nil, C5.nongst), R.nil);
+      sheets.push({ name: 'Books vs GSTR-1', rows, money: [2, 3, 4, 5, 6], widths: [30, 12, 16, 14, 14, 14, 12] });
+    }
+    const c = w.c9;
+    sheets.push({ name: 'GSTR-9C', rows: [['GSTR-9C reconciliation – FY ' + (w.fy || '')], ['Fill the audited figures in GST Desk (or here) – the books figures are used until then.'], [],
+      ['Table', 'Particulars', 'Amount', 'Note'],
+      ['5A', 'Turnover as per audited financial statements', c.fsTurnover, 'Enter the audited figure'],
+      ['5B–5O', 'Adjustments (unbilled revenue, advances, credit notes after year end, deemed supply, etc.)', '', 'Fill as applicable'],
+      ['5P', 'Annual turnover after adjustments', c.fsTurnover, ''],
+      ['5Q', 'Turnover as declared in annual return (GSTR-9)', c.gstr9Turnover, '4N + 5N − 4G'],
+      ['5R', 'Un-reconciled turnover (5P − 5Q)', c.diff, c.diff ? 'Explain in table 6' : 'Reconciled'], [],
+      ['7', 'Taxable turnover rate-wise (books)', '', ''],
+      ...Object.entries(w.rates).sort((a, b) => parseFloat(a[0]) - parseFloat(b[0])).map(([rt, v]) => ['', `Rate ${rt}`, v.txval, `IGST ${v.igst} · CGST ${v.cgst} · SGST ${v.sgst} · Cess ${v.cess}`]), [],
+      ['12A', 'ITC availed as per audited financial statements', c.fsItc, 'Enter the audited figure'],
+      ['12E', 'ITC claimed in annual return (GSTR-9 – books ITC here)', c.gstr9Itc, ''],
+      ['12F', 'Un-reconciled ITC (12A − 12E)', c.itcDiff, c.itcDiff ? 'Explain in table 13' : 'Reconciled']],
+      money: [2], widths: [10, 70, 18, 50] });
+    const mon = [['Month', 'Sales taxable', 'Sales tax', 'Credit notes taxable', 'Purchases taxable', 'Purchase ITC', 'Debit notes taxable', 'RCM taxable']];
+    for (const m of Object.keys(w.monthly).sort()) { const x = w.monthly[m], tx = a => r2(a.igst + a.cgst + a.sgst + a.cess);
+      mon.push([m, x.sales.txval, tx(x.sales), x.credit.txval, x.purchase.txval, tx(x.purchase), x.debit.txval, x.rcm.txval]); }
+    sheets.push({ name: 'Month-wise', rows: mon, money: [1, 2, 3, 4, 5, 6, 7], widths: [10, 16, 14, 16, 16, 14, 16, 14] });
+    const hs = (title, L) => [[title], ['HSN/SAC', 'UQC', 'Rate %', 'Quantity', 'Taxable value', 'IGST', 'CGST', 'SGST/UTGST', 'Cess'], ...L.map(h => [h.hsn, h.uqc, h.rt, h.qty, h.txval, h.igst, h.cgst, h.sgst, h.cess])];
+    sheets.push({ name: 'Table 17 HSN outward', rows: hs('Table 17 – HSN-wise summary of outward supplies', w.hsnOut), money: [4, 5, 6, 7, 8], widths: [12, 8, 8, 12, 16, 14, 14, 14, 12] });
+    sheets.push({ name: 'Table 18 HSN inward', rows: hs('Table 18 – HSN-wise summary of inward supplies', w.hsnIn), money: [4, 5, 6, 7, 8], widths: [12, 8, 8, 12, 16, 14, 14, 14, 12] });
+    return sheets;
+  }
+
+  root.GSTWork = { registers, buildGSTR1, validateGSTR1, parse2B, parseGSTR1, reconcile, reconSheets, threeB, threeBSheet, gstr9, gstr9Sheets, r1Annual, rateGroups, snap, r2, toIso, ddmmyyyy, normNum, looseNum };
 })(typeof window !== 'undefined' ? window : globalThis);

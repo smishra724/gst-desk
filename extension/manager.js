@@ -1160,7 +1160,9 @@
     await vaultButton();
     if ((await GSTVault.state()) === 'locked' && profiles.some(p => p.portal && p.portal.passwordEnc)) vaultDialog('unlock');   // ask once, with "remember"
     const v = (location.hash || '').slice(1);
-    showView(['downloads', 'work'].includes(v) ? v : 'clients');
+    const wm = /^work=(\d{4}-\d{2})$/.exec(v);   // from CA Desk: a pending GST return → Tally & GST work for that month
+    showView(['downloads', 'work'].includes(v) || wm ? (wm ? 'work' : v) : 'clients');
+    if (wm) document.dispatchEvent(new CustomEvent('gstf-work-month', { detail: wm[1] }));
     if (v === 'clients-new') createProfile();
     if (v.startsWith('gstin=')) { const p = profiles.find(x => x.gstin === decodeURIComponent(v.slice(6)).toUpperCase()); if (p) { currentId = p.id; renderList(); renderEditor(); } }
     const pending = (await chrome.storage.local.get('gstf_import_result')).gstf_import_result;
