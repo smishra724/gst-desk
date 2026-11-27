@@ -16,6 +16,18 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       .catch(e => reply({ ok: false, error: e.message }));
     return true;
   }
+  if (msg.type === 'CAPM_ZOHO') { // Zoho Books for CA Desk: GET on the Books API, POST only to the OAuth token endpoint
+    if (!(sender.url && /^https:\/\/smishra724\.github\.io\//.test(sender.url))) { reply({ ok: false, error: 'not allowed' }); return; }
+    let u; try { u = new URL(msg.url); } catch { reply({ ok: false, error: 'bad url' }); return; }
+    const api = /^www\.zohoapis\.(in|com|eu|com\.au|jp|ca|sa)$/.test(u.hostname) && u.pathname.startsWith('/books/v3/') && msg.method === 'GET';
+    const tok = /^accounts\.zoho\.(in|com|eu|com\.au|jp|ca|sa)$/.test(u.hostname) && u.pathname === '/oauth/v2/token' && msg.method === 'POST';
+    if (u.protocol !== 'https:' || !(api || tok)) { reply({ ok: false, error: 'only Zoho Books reads and token requests are allowed' }); return; }
+    const headers = {}; if (msg.auth) headers.Authorization = msg.auth; if (tok) headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    fetch(u.href, { method: msg.method, headers, body: tok ? msg.body : undefined })
+      .then(async r => reply({ ok: true, status: r.status, text: await r.text() }))
+      .catch(e => reply({ ok: false, error: e.message }));
+    return true;
+  }
   if (msg.type === 'CAPM_DSC' && sender.url && /^https:\/\/smishra724\.github\.io\//.test(sender.url)) {
     try { chrome.runtime.sendNativeMessage('com.smconsultancy.cadesk_dsc', { cmd: 'list' }, r => reply(r || { ok: false, error: chrome.runtime.lastError?.message || 'no reply', missing: /not found|forbidden/i.test(chrome.runtime.lastError?.message || '') })); }
     catch (e) { reply({ ok: false, error: e.message }); }

@@ -1,6 +1,6 @@
 {
-  "version": "3.4.0",
+  "version": "3.5.0",
   "zip": "gst-desk.zip",
-  "notes": "3.4.0: GSTR-9 / 9C working from Tally (tables 4-9, 17, 18, books vs GSTR-1, 9C reconciliation); CA Desk opens Tally & GST work for a month",
+  "notes": "3.5.0: Zoho Books link for CA Desk bookkeeping (invoices, credit notes, payments \u2192 Tally)",
   "storeUrl": ""
 }

@@ -4,6 +4,7 @@ const send = (msg, cb) => { try { if (!chrome.runtime || !chrome.runtime.id) ret
 // CA Desk portal helper bridge. Runs on the CA Desk page. Tells the page the extension is installed and relays Login clicks.
 document.documentElement.dataset.capmExt = '1';
 document.documentElement.dataset.capmTally = '1';
+document.documentElement.dataset.capmZoho = '1';   // Zoho Books API through the extension (Zoho does not allow web pages to call it)
 document.documentElement.dataset.capmVer = chrome.runtime.getManifest().version;
 document.documentElement.dataset.capmId = chrome.runtime.id;
 document.documentElement.dataset.capmSuite = '1';   // combined extension (GST Desk + helper)
@@ -14,6 +15,12 @@ window.addEventListener('message', e => {
     send({ type: 'CAPM_TALLY', url: d.url, xml: d.xml }, r => {
       const res = r || { ok: false, error: chrome.runtime.lastError?.message || 'no reply' };
       window.postMessage({ type: 'CAPM_TALLY_RES', id: d.id, ...res }, location.origin);
+    });
+    return;
+  }
+  if (d && d.type === 'CAPM_ZOHO' && typeof d.url === 'string') { // Zoho Books / Zoho accounts API (read + token exchange only)
+    send({ type: 'CAPM_ZOHO', url: d.url, method: d.method || 'GET', body: typeof d.body === 'string' ? d.body : '', auth: typeof d.auth === 'string' ? d.auth : '' }, r => {
+      window.postMessage({ type: 'CAPM_ZOHO_RES', id: d.id, ...(r || { ok: false, error: chrome.runtime.lastError?.message || 'no reply' }) }, location.origin);
     });
     return;
   }

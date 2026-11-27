@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CA Desk Suite – GST Desk & Portal Helper",
-  "version": "3.4.0",
+  "version": "3.5.0",
   "description": "GST Desk (client master, GST registration filling, bulk GSTR-1/2B/3B downloads, Tally GST work) plus the CA Desk portal helper: login autofill, Tally link, GSTR-1 autopilot and filing-frequency checks. You type every CAPTCHA/OTP.",
   "permissions": [
     "alarms",
@@ -14,7 +14,11 @@
     "http://127.0.0.1/*",
     "http://localhost/*",
     "https://*.gst.gov.in/*",
-    "https://smishra724.github.io/*"
+    "https://smishra724.github.io/*",
+    "https://www.zohoapis.in/*",
+    "https://www.zohoapis.com/*",
+    "https://accounts.zoho.in/*",
+    "https://accounts.zoho.com/*"
   ],
   "background": {
     "service_worker": "background.js"
